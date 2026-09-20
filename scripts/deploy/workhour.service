@@ -1,0 +1,38 @@
+# ============================================================
+# 工时管理系统 · systemd 守护单元
+# 作用：开机自启 + 进程异常退出自动重启
+# 安装：sudo cp workhour.service /etc/systemd/system/workhour.service
+#       sudo systemctl daemon-reload && sudo systemctl enable --now workhour
+# 说明：.env 由应用通过 dotenv 读取（WorkingDirectory 下），此处【不】用
+#       EnvironmentFile，避免 systemd 对引号/# 的解析与 dotenv 冲突。
+# ============================================================
+
+[Unit]
+Description=工时管理系统 (WorkHour Management System)
+Documentation=file:///opt/workhour/docs/deploy-cloud.md
+After=network.target
+# 若将来改用【本地】MySQL，取消下一行注释：
+# After=network.target mysql.service
+
+[Service]
+Type=simple
+# ============ 需修改：与部署目录/用户一致 ============
+User=workhour
+Group=workhour
+WorkingDirectory=/opt/workhour
+# =======================================================
+# 仅设置 NODE_ENV；DB_HOST/DB_PASSWORD/PORT 等全部来自 /opt/workhour/.env（dotenv 加载）
+Environment=NODE_ENV=production
+# ExecStart 使用绝对路径的 node（NodeSource 安装位置）
+ExecStart=/usr/bin/node /opt/workhour/server.js
+# 异常自动重启策略
+Restart=always
+RestartSec=3
+# 可选资源限制，按需取消注释
+# MemoryMax=512M
+# 标准输出/错误进入 journald，用 journalctl -u workhour 查看
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

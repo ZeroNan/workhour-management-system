@@ -1,0 +1,50 @@
+# ===================== 依赖与构建产物 =====================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+coverage/
+dist/
+build/
+*.tsbuildinfo
+
+# ===================== 环境变量 / 密钥（敏感，禁止提交） =====================
+.env
+.env.local
+.env.*.local
+*.env            # 匹配 a.env / dev.env 等；.env.example 不受影响（以其 .example 结尾）
+# ⚠️ .env.example 是脱敏后的配置模板，允许提交；不要在其内写入真实密码
+
+# ===================== 数据库 / 运行时数据 =====================
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# ===================== 日志 =====================
+*.log
+logs/
+
+# ===================== IDE / 编辑器 =====================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ===================== 操作系统 =====================
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ===================== 内部工具目录（不随项目发布） =====================
+.workbuddy/
+
+# ===================== 进程 / 临时 =====================
+*.pid
+.pid

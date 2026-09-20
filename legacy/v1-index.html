@@ -1,0 +1,1618 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>研发团队工时管理系统</title>
+<style>
+/* ============================================================
+   样式：基础变量与全局
+   ============================================================ */
+:root{
+  --primary:#2f6fed; --primary-dark:#1d54c7;
+  --success:#16a34a; --warn:#ea8a00; --danger:#dc2626;
+  --bg:#f4f6fa; --card:#ffffff; --border:#e5e8ef;
+  --text:#1f2937; --muted:#8a94a6; --radius:10px;
+  --th-bg:#f8fafc; --we-bg:#f2f4f8;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;
+}
+h1,h2,h3{font-weight:600}
+button{font-family:inherit}
+
+/* ---------- 顶栏 ---------- */
+.topbar{
+  position:sticky;top:0;z-index:50;height:56px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px;background:#fff;border-bottom:1px solid var(--border);
+}
+.brand{font-size:17px;font-weight:700;color:var(--primary);letter-spacing:.5px}
+.user-box{display:flex;align-items:center;gap:12px;color:#4b5563}
+.user-box .who{font-weight:600}
+
+/* ---------- 布局：侧边栏 + 主区 ---------- */
+.layout{display:flex;min-height:calc(100vh - 56px)}
+.sidebar{width:200px;flex-shrink:0;background:#fff;border-right:1px solid var(--border);padding:14px 10px;display:flex;flex-direction:column;gap:4px}
+.nav-item{padding:10px 14px;border-radius:8px;cursor:pointer;color:#4b5563;user-select:none;transition:all .15s}
+.nav-item:hover{background:#f1f5ff;color:var(--primary)}
+.nav-item.active{background:var(--primary);color:#fff;font-weight:600}
+.main{flex:1;min-width:0;padding:20px 22px 40px}
+.page-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px}
+.page-head h2{font-size:18px}
+.page-tools{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+
+/* ---------- 卡片 / 空态 ---------- */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+.empty{padding:48px 20px;text-align:center;color:var(--muted)}
+.muted{color:var(--muted)}
+
+/* ---------- 表格 ---------- */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:8px;background:#fff}
+.tbl{border-collapse:collapse;white-space:nowrap;font-size:13px}
+.tbl th,.tbl td{border-bottom:1px solid var(--border);border-right:1px solid #eef0f4;padding:8px 12px;text-align:center}
+.tbl thead th{background:var(--th-bg);color:#5b6472;font-weight:600;position:sticky;top:0}
+.tbl tbody tr:hover{background:#fafbfd}
+.tbl td.left,.tbl th.left{text-align:left}
+.td-content{max-width:280px;overflow:hidden;text-overflow:ellipsis}
+.td-acts{display:flex;gap:6px;justify-content:center}
+
+/* 月度/统计矩阵表格 */
+.tbl.monthly{min-width:max-content}
+.tbl th.pcell,.tbl td.pcell{position:sticky;left:0;z-index:2;background:#fff;text-align:left;min-width:96px;font-weight:600}
+.tbl thead th.pcell{background:var(--th-bg);z-index:3}
+.dth{min-width:38px;padding:6px 4px !important}
+.dth .dnum{display:block;font-weight:600}
+.dth .dwk{display:block;font-size:11px;color:var(--muted)}
+.dth.we{background:var(--we-bg)}
+.dth.we .dwk{color:var(--warn)}
+th.c-sum,td.c-sum{background:#f6f8fc;font-weight:700;min-width:52px}
+td.c-h{font-variant-numeric:tabular-nums}
+td.c-empty{color:#c3c9d4}
+td.editable{cursor:pointer}
+td.editable:hover{background:#eef4ff;outline:1px solid var(--primary);outline-offset:-1px}
+td.locked{color:#5b6472;background:#fafbfd}
+tr.sumrow td{background:#f6f8fc;font-weight:700}
+td.ok{background:#e8f7ee !important;color:#137a3c;font-weight:700}
+td.warn{background:#fdeed6 !important;color:#b45309;font-weight:700}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;color:var(--muted);font-size:12px}
+.lg{display:inline-flex;align-items:center;gap:6px}
+.lg i{display:inline-block;width:12px;height:12px;border-radius:3px}
+.lg-ok i{background:#e8f7ee;border:1px solid #16a34a}
+.lg-warn i{background:#fdeed6;border:1px solid #ea8a00}
+.t-ok{color:var(--success);font-weight:700}
+.t-warn{color:var(--warn);font-weight:700}
+
+/* ---------- 徽章 ---------- */
+.badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:500}
+.b-draft{background:#eef0f4;color:#5b6472}
+.b-sub{background:#e8f0ff;color:#1d54c7}
+.b-ok{background:#e8f7ee;color:#137a3c}
+.b-rej{background:#fdeaea;color:#b91c1c}
+
+/* ---------- 按钮 ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:7px 14px;border-radius:8px;border:1px solid var(--border);
+  background:#fff;color:#374151;font-size:13px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.btn:hover{background:#f6f8fc;border-color:#cdd4df}
+.btn-primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn-primary:hover{background:var(--primary-dark);border-color:var(--primary-dark)}
+.btn-danger{background:#fff;border-color:#f3c1c1;color:var(--danger)}
+.btn-danger:hover{background:#fdeaea;border-color:var(--danger)}
+.btn-ghost{border-color:transparent;background:transparent;color:#4b5563}
+.btn-ghost:hover{background:#f1f3f7}
+.btn-sm{padding:4px 10px;font-size:12px;border-radius:6px}
+.btn-block{width:100%}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* ---------- 表单 ---------- */
+.form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px 18px}
+.fg{display:flex;flex-direction:column;gap:5px;min-width:0}
+.fg.wide{grid-column:1 / -1}
+.fg label{font-size:13px;color:#5b6472;font-weight:600}
+.fg input,.fg select,.fg textarea,.filter input,.filter select{
+  border:1px solid #d3d9e3;border-radius:8px;padding:8px 10px;font-size:13px;background:#fff;color:var(--text);width:100%;font-family:inherit}
+.fg input:focus,.fg select:focus,.fg textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(47,111,237,.12)}
+.fg input[readonly]{background:#f6f8fc;color:#6b7280}
+.fg textarea{resize:vertical}
+.ferr{color:var(--danger);font-size:12px;min-height:0}
+.hint{font-size:12px;color:var(--muted)}
+.form-actions{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap}
+
+/* ---------- 筛选条 ---------- */
+.filters{display:flex;flex-wrap:wrap;gap:12px 16px;margin-bottom:14px;align-items:flex-end}
+.filter{display:flex;flex-direction:column;gap:5px;min-width:140px}
+.filter label{font-size:12px;color:var(--muted);font-weight:600}
+.batch-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 12px;margin-bottom:12px;
+  background:#f6f8fc;border:1px solid var(--border);border-radius:8px}
+.batch-bar .cnt{color:var(--muted);font-size:13px}
+
+/* ---------- 弹窗 ---------- */
+.modal-mask{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
+.modal{background:#fff;border-radius:12px;width:100%;max-width:720px;box-shadow:0 20px 50px rgba(15,23,42,.25);animation:pop .16s ease-out}
+@keyframes pop{from{transform:translateY(-8px);opacity:0}to{transform:none;opacity:1}}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border)}
+.modal-head h3{font-size:15px}
+.modal-x{border:none;background:none;font-size:20px;color:var(--muted);cursor:pointer;line-height:1;padding:2px 6px;border-radius:6px}
+.modal-x:hover{background:#f1f3f7;color:var(--text)}
+.modal-body{padding:18px;max-height:70vh;overflow:auto}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;flex-wrap:wrap}
+.confirm-msg{font-size:14px;line-height:1.7}
+.audit-c{background:#fdeaea;color:#b91c1c;border-radius:8px;padding:8px 10px;font-size:13px;margin:6px 0}
+
+/* 日编辑弹窗内记录卡片 */
+.day-sum{padding:9px 12px;background:#f6f8fc;border-radius:8px;margin-bottom:12px;font-size:13px}
+.rec-card{border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px;background:#fff}
+.rec-card.ro{background:#fafbfd}
+.rec-card.add-card{background:#f8fbff;border-style:dashed}
+.rc-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.rc-row select{flex:1;min-width:140px}
+.rc-row input{width:96px}
+.rc-row input,.rc-row select{border:1px solid #d3d9e3;border-radius:8px;padding:6px 8px;font-size:13px;font-family:inherit}
+.rec-card textarea{width:100%;border:1px solid #d3d9e3;border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;resize:vertical}
+.rc-acts{display:flex;gap:8px;margin-top:8px;justify-content:flex-end}
+.ro-content{color:#4b5563;font-size:13px;padding:4px 0}
+
+/* ---------- Tab ---------- */
+.tabbar{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.tab-item{padding:8px 16px;border-radius:8px;cursor:pointer;color:#4b5563;background:#fff;border:1px solid var(--border);user-select:none}
+.tab-item.active{background:var(--primary);color:#fff;border-color:var(--primary);font-weight:600}
+
+/* ---------- 成员勾选 ---------- */
+.member-checks{display:flex;flex-wrap:wrap;gap:8px 16px;border:1px solid #d3d9e3;border-radius:8px;padding:10px;max-height:200px;overflow:auto}
+.mcheck{display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;white-space:nowrap}
+.mcheck input{accent-color:var(--primary)}
+
+/* ---------- Toast ---------- */
+#toast-root{position:fixed;top:68px;left:50%;transform:translateX(-50%);z-index:200;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.toast{padding:10px 18px;border-radius:8px;color:#fff;font-size:13px;box-shadow:0 8px 24px rgba(15,23,42,.2);animation:pop .18s ease-out;max-width:80vw}
+.toast.t-success{background:#16a34a}
+.toast.t-error{background:#dc2626}
+.toast.t-info{background:#475569}
+
+/* ---------- 登录页 ---------- */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
+  background:linear-gradient(135deg,#eaf1ff 0%,#f4f6fa 55%,#eef7f2 100%)}
+.login-card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:34px 32px;width:100%;max-width:420px;box-shadow:0 12px 40px rgba(31,41,55,.08)}
+.login-card h1{font-size:20px;text-align:center;color:var(--text)}
+.login-sub{text-align:center;color:var(--muted);font-size:12px;margin:6px 0 22px;letter-spacing:1px}
+.login-card form{display:flex;flex-direction:column;gap:12px}
+.demo-acc{margin-top:22px;border-top:1px dashed var(--border);padding-top:16px}
+.demo-title{font-size:12px;color:var(--muted);margin-bottom:10px}
+.demo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.demo-btn{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px;border:1px solid var(--border);
+  border-radius:8px;background:#fff;cursor:pointer;font-size:12px;transition:all .15s}
+.demo-btn:hover{border-color:var(--primary);background:#f5f9ff}
+.demo-btn b{font-size:12px;color:var(--text)}
+.demo-btn span{color:var(--muted);font-size:11px}
+
+/* ---------- 响应式 ---------- */
+@media (max-width:860px){
+  .layout{flex-direction:column}
+  .sidebar{width:100%;flex-direction:row;overflow-x:auto;border-right:none;border-bottom:1px solid var(--border);padding:8px}
+  .nav-item{white-space:nowrap}
+  .main{padding:14px 12px 40px}
+  .demo-grid{grid-template-columns:repeat(2,1fr)}
+  .form-grid{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast-root"></div>
+<!-- SheetJS：Excel 导出；加载失败时自动降级为 CSV 导出 -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+'use strict';
+
+/* ============================================================================
+ * 一、常量与基础工具函数
+ * ========================================================================== */
+const LS_KEY = 'wtms_data';            // localStorage 数据 key
+const SESSION_KEY = 'wtms_session';    // 登录会话 key
+
+const $  = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad = n => String(n).padStart(2, '0');
+const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
+const curYM = () => todayStr().slice(0, 7);
+const WEEK = ['日','一','二','三','四','五','六'];
+const weekdayOf = ds => WEEK[new Date(ds + 'T00:00:00').getDay()];
+const isWeekend = ds => { const w = new Date(ds + 'T00:00:00').getDay(); return w === 0 || w === 6; };
+const daysInMonth = ym => { const a = ym.split('-'); return new Date(+a[0], +a[1], 0).getDate(); };
+const fmtH = h => String(Math.round(h * 100) / 100);
+const nowStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const empty = msg => `<div class="card"><div class="empty">${esc(msg)}</div></div>`;
+const opt = (v, l, sel) => `<option value="${esc(v)}" ${sel === v ? 'selected' : ''}>${esc(l)}</option>`;
+
+const ROLE_LABEL = { admin:'系统管理员', pm:'项目负责人', dev:'研发人员' };
+const STATUS = {
+  draft:     { label:'未提交', cls:'b-draft' },
+  submitted: { label:'待审核', cls:'b-sub'   },
+  approved:  { label:'已通过', cls:'b-ok'    },
+  rejected:  { label:'已退回', cls:'b-rej'   },
+};
+const badge = st => `<span class="badge ${STATUS[st] ? STATUS[st].cls : ''}">${STATUS[st] ? STATUS[st].label : esc(st)}</span>`;
+
+/* 全局状态：当前用户、当前视图、月度视图选中月份 */
+const state = { user:null, view:'fill', month:curYM() };
+
+/* ============================================================================
+ * 二、数据层：localStorage 读写
+ * ========================================================================== */
+let db = null; // { users, departments, projects, timesheets, seq }
+
+function loadDB() {
+  let d = null;
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) d = JSON.parse(raw);
+  } catch (e) { /* 数据损坏则重新种入 */ }
+  /* 关键字段齐全才可用，否则（JSON 解析失败 / 结构缺字段）重新种入 */
+  if (d && Array.isArray(d.users) && Array.isArray(d.departments) &&
+      Array.isArray(d.projects) && Array.isArray(d.timesheets) &&
+      typeof d.seq === 'number') { db = d; return; }
+  db = seedData();
+  saveDB();
+}
+function saveDB() { try { localStorage.setItem(LS_KEY, JSON.stringify(db)); } catch (e) { /* 存储不可用（隐私模式/配额满）时跳过持久化 */ } }
+
+/* 实体查询助手 */
+const rec      = id => db.timesheets.find(t => t.id === id);
+const userById = id => db.users.find(u => u.id === id) || { name:'—', deptId:null, role:'dev', username:'' };
+const projById = id => db.projects.find(p => p.id === id) || { name:'—', memberIds:[], ownerId:null };
+const deptName = id => (id && db.departments.find(d => d.id === id)) ? db.departments.find(d => d.id === id).name : '—';
+const myProjects = u => db.projects.filter(p => p.memberIds.includes(u.id));
+
+/* 某人某日工时合计（可排除某条记录，用于编辑时校验） */
+function dayTotal(userId, date, excludeId) {
+  return db.timesheets
+    .filter(t => t.userId === userId && t.date === date && t.id !== excludeId)
+    .reduce((s, t) => s + t.hours, 0);
+}
+
+/* ============================================================================
+ * 三、种子演示数据（首次加载时自动种入）
+ * ========================================================================== */
+function seedData() {
+  const departments = [
+    { id:'d1', name:'研发一部' },
+    { id:'d2', name:'研发二部' },
+    { id:'d3', name:'测试部' },
+  ];
+  const users = [
+    { id:'u0', username:'admin', password:'123456', name:'系统管理员', role:'admin', deptId:null },
+    { id:'u1', username:'pm1',   password:'123456', name:'王负责人',  role:'pm',   deptId:'d1' },
+    { id:'u2', username:'pm2',   password:'123456', name:'李负责人',  role:'pm',   deptId:'d2' },
+    { id:'u3', username:'dev1',  password:'123456', name:'张开发',    role:'dev',  deptId:'d1' },
+    { id:'u4', username:'dev2',  password:'123456', name:'刘开发',    role:'dev',  deptId:'d1' },
+    { id:'u5', username:'dev3',  password:'123456', name:'陈开发',    role:'dev',  deptId:'d2' },
+    { id:'u6', username:'dev4',  password:'123456', name:'赵开发',    role:'dev',  deptId:'d2' },
+    { id:'u7', username:'dev5',  password:'123456', name:'孙测试',    role:'dev',  deptId:'d3' },
+    { id:'u8', username:'dev6',  password:'123456', name:'周测试',    role:'dev',  deptId:'d3' },
+  ];
+  const projects = [
+    { id:'p1', name:'电商平台', ownerId:'u1', memberIds:['u1','u3','u4','u7'] },
+    { id:'p2', name:'AI中台',   ownerId:'u2', memberIds:['u2','u5','u6','u8'] },
+  ];
+
+  /* 本月前 3 天（若当月不足 3 天则到今天为止）的工时记录，覆盖四种状态 */
+  const timesheets = [];
+  let tid = 1;
+  const ym = curYM();
+  const todayD = Number(todayStr().slice(8, 10));
+  const maxD = Math.max(0, Math.min(3, todayD));
+  const members = [
+    ['u3','p1','dev'], ['u4','p1','dev'], ['u7','p1','dev'], ['u1','p1','pm'],
+    ['u5','p2','dev'], ['u6','p2','dev'], ['u8','p2','dev'], ['u2','p2','pm'],
+  ];
+  const CONTENTS = {
+    dev:['需求评审与开发方案设计','核心功能开发与自测','接口联调与缺陷修复'],
+    pm :['项目计划制定与任务拆分','进度跟踪与风险协调','项目周报整理与阶段复盘'],
+  };
+  members.forEach(([uid, pid, kind], i) => {
+    const deptId = users.find(u => u.id === uid).deptId;
+    for (let d = 1; d <= maxD; d++) {
+      const date = `${ym}-${pad(d)}`;
+      const push = (hours, status, content, st, at, cm) => timesheets.push({
+        id:'t' + (tid++), userId:uid, deptId, projectId:pid, date,
+        hours, content, status, submitTime:st || null, auditTime:at || null, auditComment:cm || '',
+      });
+      const c = (CONTENTS[kind][d-1] || '日常工作');
+      if (d === 1) {
+        /* 第 1 天：全部已通过 */
+        push(7, 'approved', c, `${date} 18:00`, `${date} 20:00`, '');
+      } else if (d === 2) {
+        /* 第 2 天：待审核为主，孙测试 6 小时演示「≠7 橙色警示」 */
+        push(i === 2 ? 6 : 7, 'submitted', c, `${date} 18:10`, null, '');
+      } else {
+        /* 第 3 天：覆盖草稿 / 退回 / 待审核 / 已通过 / 未填满等多种情况 */
+        if (i === 1) {            // 刘开发：两条草稿合计 7
+          push(3.5, 'draft', c, null, null, '');
+          push(3.5, 'draft', c + '（续）', null, null, '');
+        } else if (i === 2) {     // 孙测试：已退回，带退回意见
+          push(7, 'rejected', c, `${date} 09:00`, `${date} 10:00`, '工作内容描述过于简单，请补充具体任务后重新提交');
+        } else if (i === 3) {     // 王负责人：8 小时待审核（≠7）
+          push(8, 'submitted', c, `${date} 18:00`, null, '');
+        } else if (i === 4) {     // 陈开发：已通过
+          push(7, 'approved', c, `${date} 18:00`, `${date} 20:00`, '');
+        } else if (i === 6) {     // 周测试：4.5 小时草稿（未填满）
+          push(4.5, 'draft', c, null, null, '');
+        } else {                  // 其余：正常待审核
+          push(7, 'submitted', c, `${date} 18:00`, null, '');
+        }
+      }
+    }
+  });
+  return { users, departments, projects, timesheets, seq:100 };
+}
+
+/* ============================================================================
+ * 四、通用 UI：Toast / 弹窗 / 确认框 / 必填输入框
+ * ========================================================================== */
+function toast(msg, type = 'success') {
+  const el = document.createElement('div');
+  el.className = `toast t-${type}`;
+  el.textContent = msg;
+  $('#toast-root').appendChild(el);
+  setTimeout(() => el.remove(), 2600);
+}
+
+/* 通用弹窗：返回弹窗元素，bodyHTML 由调用方拼装。
+   支持嵌套（如在日编辑弹窗内再弹 7 小时确认框），closeModal 只关最顶层 */
+function openModal(title, bodyHTML) {
+  const mask = document.createElement('div');
+  mask.className = 'modal-mask';
+  mask.innerHTML = `
+    <div class="modal">
+      <div class="modal-head"><h3>${esc(title)}</h3><button class="modal-x" data-close title="关闭">×</button></div>
+      <div class="modal-body">${bodyHTML}</div>
+    </div>`;
+  mask.addEventListener('click', e => {
+    if (e.target === mask || e.target.closest('[data-close]')) closeModal();
+  });
+  document.body.appendChild(mask);
+  return mask;
+}
+function closeModal() { const ms = $$('.modal-mask'); if (ms.length) ms[ms.length - 1].remove(); }
+
+/* 确认框：返回 Promise<boolean> */
+function uiConfirm(msg) {
+  return new Promise(resolve => {
+    const m = openModal('操作提醒', `
+      <p class="confirm-msg">${esc(msg)}</p>
+      <div class="modal-actions">
+        <button class="btn" id="__uc_no">取消</button>
+        <button class="btn btn-primary" id="__uc_yes">确定</button>
+      </div>`);
+    m.querySelector('#__uc_no').onclick  = () => { closeModal(); resolve(false); };
+    m.querySelector('#__uc_yes').onclick = () => { closeModal(); resolve(true); };
+  });
+}
+
+/* 必填输入框（单行/多行）：返回 Promise<string|null>，空值不允许提交 */
+function uiPrompt(title, label, initial = '', multiline = true) {
+  return new Promise(resolve => {
+    const field = multiline
+      ? `<textarea id="__p_val" rows="3">${esc(initial)}</textarea>`
+      : `<input id="__p_val" value="${esc(initial)}">`;
+    const m = openModal(title, `
+      <div class="fg"><label>${esc(label)}</label>${field}<span class="ferr" id="__p_err"></span></div>
+      <div class="modal-actions">
+        <button class="btn" id="__p_no">取消</button>
+        <button class="btn btn-primary" id="__p_ok">确定</button>
+      </div>`);
+    m.querySelector('#__p_no').onclick = () => { closeModal(); resolve(null); };
+    m.querySelector('#__p_ok').onclick = () => {
+      const v = m.querySelector('#__p_val').value.trim();
+      if (!v) { m.querySelector('#__p_err').textContent = '此项为必填，不能为空'; return; }
+      closeModal(); resolve(v);
+    };
+  });
+}
+
+/* ============================================================================
+ * 五、状态流转（统一入口，避免散落判断）
+ *    draft/rejected --submit--> submitted --approve--> approved
+ *                                          --reject---> rejected（需退回意见）
+ * ========================================================================== */
+function transit(record, action, comment) {
+  switch (action) {
+    case 'submit':
+      if (!['draft', 'rejected', 'submitted'].includes(record.status)) {
+        return { ok:false, msg:'当前状态不允许提交' };
+      }
+      record.status = 'submitted';
+      record.submitTime = nowStr();
+      record.auditTime = null;
+      record.auditComment = '';
+      break;
+    case 'approve':
+      if (record.status !== 'submitted') return { ok:false, msg:'仅待审核状态可通过' };
+      record.status = 'approved';
+      record.auditTime = nowStr();
+      break;
+    case 'reject':
+      if (record.status !== 'submitted') return { ok:false, msg:'仅待审核状态可退回' };
+      const c = String(comment || '').trim();
+      if (!c) return { ok:false, msg:'退回意见不能为空' };
+      record.status = 'rejected';
+      record.auditTime = nowStr();
+      record.auditComment = c;
+      break;
+    default:
+      return { ok:false, msg:'未知操作' };
+  }
+  saveDB();
+  return { ok:true };
+}
+
+/* ============================================================================
+ * 六、7 小时校验规则（提醒而非硬阻断；>24 硬阻断）
+ * ========================================================================== */
+async function checkHoursRule(userId, date, newHours, excludeId) {
+  const total = dayTotal(userId, date, excludeId) + (Number(newHours) || 0);
+  if (total > 24 + 1e-9) {
+    toast(`每日合计不能超过 24 小时（本次将合计 ${fmtH(total)} 小时）`, 'error');
+    return false;
+  }
+  if (Math.abs(total - 7) > 1e-9) {
+    const go = await uiConfirm(`${date} 当日工时合计 ${fmtH(total)} 小时，标准为 7 小时。是否仍要继续？`);
+    if (!go) { toast('已取消本次操作', 'info'); return false; }
+  }
+  return true;
+}
+
+/* 某人某日是否可编辑（无记录或有任一非「已通过」记录） */
+function dayEditable(userId, date) {
+  const rs = db.timesheets.filter(t => t.userId === userId && t.date === date);
+  return rs.length === 0 || rs.some(t => t.status !== 'approved');
+}
+
+/* 新建一条工时记录（草稿） */
+function newTimesheet(userId, projectId, date, hours, content) {
+  const u = userById(userId);
+  const t = {
+    id: 't' + (db.seq++), userId, deptId: u.deptId, projectId, date,
+    hours: Number(hours), content,
+    status: 'draft', submitTime: null, auditTime: null, auditComment: '',
+  };
+  db.timesheets.push(t);
+  return t;
+}
+
+/* ============================================================================
+ * 七、布局与导航渲染
+ * ========================================================================== */
+const NAV = [
+  { view:'fill',    label:'填报工时',     roles:['dev', 'pm'] },
+  { view:'mylist',  label:'工时记录列表', roles:['dev', 'pm'] },
+  { view:'monthly', label:'我的月度工时', roles:['admin', 'pm', 'dev'] },
+  { view:'audit',   label:'工时审核',     roles:['pm'] },
+  { view:'allts',   label:'全部工时信息', roles:['admin'] },
+  { view:'stats',   label:'项目统计',     roles:['admin'] },
+  { view:'base',    label:'基础数据管理', roles:['admin'] },
+];
+
+function render() {
+  const app = $('#app');
+  if (!state.user) { app.innerHTML = loginHTML(); bindLogin(); return; }
+  const me = state.user;
+  const items = NAV.filter(n => n.roles.includes(me.role));
+  app.innerHTML = `
+    <header class="topbar">
+      <div class="brand">研发团队工时管理系统</div>
+      <div class="user-box">
+        <span class="who">${esc(me.name)}</span>
+        <span>（${ROLE_LABEL[me.role]}${me.deptId ? ' · ' + esc(deptName(me.deptId)) : ''}）</span>
+        <button class="btn btn-sm btn-ghost" id="btn-logout">退出登录</button>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        ${items.map(n => `<div class="nav-item ${state.view === n.view ? 'active' : ''}" data-view="${n.view}">${n.label}</div>`).join('')}
+      </aside>
+      <main class="main" id="main"></main>
+    </div>`;
+  $('#btn-logout').onclick = logout;
+  $$('.nav-item').forEach(el => el.onclick = () => { state.view = el.dataset.view; render(); });
+  renderView();
+}
+
+function logout() {
+  closeModal();  // 防止换账号后残留弹窗操作他人数据
+  localStorage.removeItem(SESSION_KEY);
+  state.user = null;
+  toast('已退出登录', 'info');
+  render();
+}
+
+/* 按当前视图分发渲染 */
+function renderView() {
+  const main = $('#main');
+  switch (state.view) {
+    case 'fill':    renderFill(main);    break;
+    case 'mylist':  renderMyList(main);  break;
+    case 'monthly': renderMonthly(main); break;
+    case 'audit':   renderAudit(main);   break;
+    case 'allts':   renderAllTS(main);   break;
+    case 'stats':   renderStats(main);   break;
+    case 'base':    renderBase(main);    break;
+    default:        main.innerHTML = empty('未知页面');
+  }
+}
+
+/* 绑定筛选控件：值写入筛选状态对象后整页刷新（保持控件选中值） */
+function bindFilter(id, obj, key) {
+  const el = $('#' + id);
+  if (!el) return;
+  const handler = () => { obj[key] = el.value; renderView(); };
+  el.addEventListener('change', handler);
+}
+
+/* ============================================================================
+ * 八、登录页
+ * ========================================================================== */
+function loginHTML() {
+  const demos = db.users.map(u => `
+    <button type="button" class="demo-btn" data-u="${esc(u.username)}">
+      <b>${esc(u.name)}</b><span>${ROLE_LABEL[u.role]} · ${esc(u.username)}</span>
+    </button>`).join('');
+  return `
+    <div class="login-wrap">
+      <div class="login-card">
+        <h1>研发团队工时管理系统</h1>
+        <p class="login-sub">R&amp;D WORKHOUR MANAGEMENT SYSTEM</p>
+        <form id="login-form">
+          <div class="fg"><label>账号</label><input id="lg-user" placeholder="请输入登录账号" autocomplete="username"></div>
+          <div class="fg"><label>密码</label><input id="lg-pass" type="password" placeholder="请输入密码" autocomplete="current-password"></div>
+          <span class="ferr" id="lg-err"></span>
+          <button class="btn btn-primary btn-block" type="submit">登 录</button>
+        </form>
+        <div class="demo-acc">
+          <div class="demo-title">演示账号（密码统一为 123456，点击直接登录）</div>
+          <div class="demo-grid">${demos}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function bindLogin() {
+  $('#login-form').addEventListener('submit', e => { e.preventDefault(); doLogin(); });
+  $$('.demo-btn').forEach(b => b.addEventListener('click', () => {
+    $('#lg-user').value = b.dataset.u;
+    $('#lg-pass').value = '123456';
+    doLogin();
+  }));
+}
+
+function doLogin() {
+  const un = $('#lg-user').value.trim();
+  const pw = $('#lg-pass').value;
+  const user = db.users.find(x => x.username === un);
+  if (!user || user.password !== pw) { $('#lg-err').textContent = '账号或密码错误'; return; }
+  state.user = user;
+  state.view = user.role === 'admin' ? 'allts' : 'fill';
+  state.month = curYM();
+  localStorage.setItem(SESSION_KEY, user.id);
+  toast(`欢迎，${user.name}`);
+  render();
+}
+
+/* ============================================================================
+ * 九、研发人员（含 PM 兼任）- 填报工时页
+ * ========================================================================== */
+function renderFill(main) {
+  const me = state.user;
+  const projects = myProjects(me);
+  const projOpts = projects.map(p => opt(p.id, p.name, '')).join('');
+  main.innerHTML = `
+    <div class="page-head"><h2>填报工时</h2></div>
+    <div class="card">
+      ${projects.length ? `
+      <div class="form-grid">
+        <div class="fg"><label>姓名</label><input readonly value="${esc(me.name)}"></div>
+        <div class="fg"><label>部门</label><input readonly value="${esc(deptName(me.deptId))}"></div>
+        <div class="fg">
+          <label>项目 *</label>
+          <select id="f-project"><option value="">请选择项目</option>${projOpts}</select>
+          <span class="ferr" id="e-project"></span>
+        </div>
+        <div class="fg">
+          <label>日期（可补录历史日期） *</label>
+          <input type="date" id="f-date" value="${todayStr()}">
+          <span class="ferr" id="e-date"></span>
+          <div class="hint" id="f-daysum"></div>
+        </div>
+        <div class="fg">
+          <label>工时（小时，0 &lt; h ≤ 24） *</label>
+          <input type="number" id="f-hours" step="0.5" min="0.5" max="24" placeholder="如 7 或 3.5">
+          <span class="ferr" id="e-hours"></span>
+        </div>
+        <div class="fg wide">
+          <label>工作内容 *</label>
+          <textarea id="f-content" rows="3" placeholder="请填写当日具体工作内容"></textarea>
+          <span class="ferr" id="e-content"></span>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn" id="f-save">保存（未提交）</button>
+        <button class="btn btn-primary" id="f-submit">保存并提交</button>
+      </div>` : `
+      <div class="empty">您暂未加入任何项目，请联系管理员将您添加为项目成员后再填报工时。</div>`}
+    </div>`;
+  if (!projects.length) return;
+
+  const updDaySum = () => {
+    const d = $('#f-date').value;
+    $('#f-daysum').textContent = d ? `该日已填报合计：${fmtH(dayTotal(me.id, d))} 小时` : '';
+  };
+  $('#f-date').addEventListener('change', updDaySum);
+  updDaySum();
+
+  const doSave = async submitFlag => {
+    ['project', 'date', 'hours', 'content'].forEach(k => $('#e-' + k).textContent = '');
+    const projectId = $('#f-project').value;
+    const date = $('#f-date').value;
+    const hours = Number($('#f-hours').value);
+    const content = $('#f-content').value.trim();
+    let ok = true;
+    if (!projectId) { $('#e-project').textContent = '请选择项目'; ok = false; }
+    if (!date)      { $('#e-date').textContent = '请选择日期'; ok = false; }
+    if (!hours || hours <= 0 || hours > 24) { $('#e-hours').textContent = '工时必须大于 0 且不超过 24 小时'; ok = false; }
+    if (!content)   { $('#e-content').textContent = '工作内容不能为空'; ok = false; }
+    if (!ok) return;
+    if (!dayEditable(me.id, date)) { $('#e-date').textContent = '该日工时已全部通过审核，不可再填报'; return; }
+    if (!(await checkHoursRule(me.id, date, hours))) return;
+    const t = newTimesheet(me.id, projectId, date, hours, content);
+    if (submitFlag) transit(t, 'submit');
+    else saveDB();
+    toast(submitFlag ? '已保存并提交，等待项目负责人审核' : '已保存为「未提交」草稿');
+    $('#f-hours').value = '';
+    $('#f-content').value = '';
+    updDaySum();
+  };
+  $('#f-save').onclick   = () => doSave(false);
+  $('#f-submit').onclick = () => doSave(true);
+}
+
+/* ============================================================================
+ * 十、研发人员（含 PM）- 工时记录列表页（筛选 + 增删改提交）
+ * ========================================================================== */
+const myListFilters = { project:'', status:'', from:'', to:'' };
+
+function renderMyList(main) {
+  const me = state.user;
+  const f = myListFilters;
+  const projects = myProjects(me);
+  const list = db.timesheets
+    .filter(t => t.userId === me.id)
+    .filter(t => !f.project || t.projectId === f.project)
+    .filter(t => !f.status  || t.status === f.status)
+    .filter(t => !f.from    || t.date >= f.from)
+    .filter(t => !f.to      || t.date <= f.to)
+    .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+
+  const statusOpts = ['<option value="">全部状态</option>']
+    .concat(Object.keys(STATUS).map(k => opt(k, STATUS[k].label, f.status))).join('');
+
+  const rows = list.map(t => {
+    const acts = t.status === 'approved'
+      ? '<span class="muted">已生效，只读</span>'
+      : `<button class="btn btn-sm" data-act="edit" data-id="${t.id}">编辑</button>
+         <button class="btn btn-sm btn-primary" data-act="submit" data-id="${t.id}">提交</button>
+         <button class="btn btn-sm btn-danger" data-act="del" data-id="${t.id}">删除</button>`;
+    return `
+      <tr>
+        <td>${t.date}</td>
+        <td class="left">${esc(projById(t.projectId).name)}</td>
+        <td>${fmtH(t.hours)}</td>
+        <td class="left td-content" title="${esc(t.content)}">${esc(t.content)}</td>
+        <td>${badge(t.status)}</td>
+        <td class="left td-content">${t.auditComment ? '<span class="t-warn">' + esc(t.auditComment) + '</span>' : '<span class="muted">—</span>'}</td>
+        <td><div class="td-acts">${acts}</div></td>
+      </tr>`;
+  }).join('');
+
+  main.innerHTML = `
+    <div class="page-head"><h2>工时记录列表</h2></div>
+    <div class="card">
+      <div class="filters">
+        <div class="filter"><label>项目</label>
+          <select id="ml-proj"><option value="">全部项目</option>${projects.map(p => opt(p.id, p.name, f.project)).join('')}</select></div>
+        <div class="filter"><label>状态</label><select id="ml-status">${statusOpts}</select></div>
+        <div class="filter"><label>日期从</label><input type="date" id="ml-from" value="${f.from}"></div>
+        <div class="filter"><label>至</label><input type="date" id="ml-to" value="${f.to}"></div>
+      </div>
+      ${list.length ? `
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr>
+          <th>日期</th><th>项目</th><th>工时(h)</th><th class="left">工作内容</th>
+          <th>状态</th><th class="left">退回意见</th><th>操作</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>` : '<div class="empty">暂无符合条件的工时记录</div>'}
+    </div>`;
+
+  bindFilter('ml-proj', f, 'project');
+  bindFilter('ml-status', f, 'status');
+  bindFilter('ml-from', f, 'from');
+  bindFilter('ml-to', f, 'to');
+
+  main.querySelector('.tbl-wrap')?.addEventListener('click', async e => {
+    const btn = e.target.closest('[data-act]');
+    if (!btn) return;
+    const t = rec(btn.dataset.id);
+    if (!t) return;
+    if (btn.dataset.act === 'edit') { openRecordEditor(t.id); }
+    else if (btn.dataset.act === 'submit') {
+      if (!(await checkHoursRule(t.userId, t.date, t.hours, t.id))) return;
+      const r = transit(t, 'submit');
+      r.ok ? toast('已提交，等待项目负责人审核') : toast(r.msg, 'error');
+      renderView();
+    } else if (btn.dataset.act === 'del') {
+      if (!(await uiConfirm(`确定删除 ${t.date} 的这条工时记录（${fmtH(t.hours)} 小时）吗？`))) return;
+      db.timesheets = db.timesheets.filter(x => x.id !== t.id);
+      saveDB();
+      toast('已删除');
+      renderView();
+    }
+  });
+}
+
+/* 单条工时记录编辑弹窗（列表页「编辑」入口） */
+function openRecordEditor(id) {
+  const t = rec(id);
+  const me = state.user;
+  if (!t) return;
+  let ps = myProjects(me);
+  if (!ps.some(p => p.id === t.projectId)) ps = ps.concat(projById(t.projectId));
+  const m = openModal('编辑工时记录', `
+    <div class="form-grid">
+      <div class="fg"><label>项目 *</label>
+        <select id="re-proj">${ps.map(p => opt(p.id, p.name, t.projectId)).join('')}</select></div>
+      <div class="fg"><label>日期 *</label><input type="date" id="re-date" value="${t.date}"></div>
+      <div class="fg"><label>工时（小时） *</label>
+        <input type="number" id="re-hours" step="0.5" min="0.5" max="24" value="${t.hours}"></div>
+      <div class="fg wide"><label>工作内容 *</label>
+        <textarea id="re-content" rows="3">${esc(t.content)}</textarea></div>
+      ${t.status === 'rejected' ? `<div class="fg wide"><label>退回意见</label><div class="audit-c">${esc(t.auditComment)}</div></div>` : ''}
+    </div>
+    <div class="modal-actions">
+      <button class="btn" data-close>取消</button>
+      <button class="btn" id="re-save">保存</button>
+      <button class="btn btn-primary" id="re-submit">保存并提交</button>
+    </div>`);
+  const doSave = async submitFlag => {
+    const projectId = m.querySelector('#re-proj').value;
+    const date = m.querySelector('#re-date').value;
+    const hours = Number(m.querySelector('#re-hours').value);
+    const content = m.querySelector('#re-content').value.trim();
+    if (!projectId || !date || !hours || hours <= 0 || hours > 24 || !content) {
+      toast('请完整填写项目、日期、工时（0~24）与工作内容', 'error'); return;
+    }
+    if (!dayEditable(me.id, date)) { toast('目标日期的工时已全部通过审核，不可移入该记录', 'error'); return; }
+    if (!(await checkHoursRule(me.id, date, hours, t.id))) return;
+    t.projectId = projectId; t.date = date; t.hours = hours; t.content = content;
+    if (submitFlag) transit(t, 'submit');
+    else saveDB();
+    closeModal();
+    toast(submitFlag ? '已保存并提交' : '已保存');
+    renderView();
+  };
+  m.querySelector('#re-save').onclick   = () => doSave(false);
+  m.querySelector('#re-submit').onclick = () => doSave(true);
+}
+
+/* ============================================================================
+ * 十一、所有人 - 我的月度工时视图（列=天，行=项目，末行=每日合计）
+ * ========================================================================== */
+function renderMonthly(main) {
+  const me = state.user;
+  const ym = state.month || curYM();
+  const nD = daysInMonth(ym);
+  const days = [];
+  for (let d = 1; d <= nD; d++) days.push(`${ym}-${pad(d)}`);
+  const recs = db.timesheets.filter(t => t.userId === me.id && t.date.startsWith(ym));
+
+  /* 行 = 用户所属项目 ∪ 有记录的项目 */
+  const projectIds = db.projects
+    .filter(p => p.memberIds.includes(me.id) || recs.some(t => t.projectId === p.id))
+    .map(p => p.id);
+
+  let inner;
+  if (!projectIds.length) {
+    inner = `<div class="empty">您在 ${ym} 暂无项目工时数据</div>`;
+  } else {
+    const head = days.map(dt => `
+      <th class="dth ${isWeekend(dt) ? 'we' : ''}">
+        <span class="dnum">${Number(dt.slice(8))}</span><span class="dwk">${weekdayOf(dt)}</span>
+      </th>`).join('');
+
+    const bodyRows = projectIds.map(pid => {
+      const cells = days.map(dt => {
+        const h = recs.filter(t => t.projectId === pid && t.date === dt).reduce((s, t) => s + t.hours, 0);
+        if (!h) {
+          const ed = dayEditable(me.id, dt);
+          return `<td class="c-empty ${ed ? 'editable' : 'locked'}" data-date="${dt}" title="${ed ? '点击填报/修改当日工时' : '该日工时已全部通过，只读'}">—</td>`;
+        }
+        return `<td class="c-h ${dayEditable(me.id, dt) ? 'editable' : 'locked'}" data-date="${dt}" title="${dt}">${fmtH(h)}</td>`;
+      }).join('');
+      const sum = recs.filter(t => t.projectId === pid).reduce((s, t) => s + t.hours, 0);
+      return `<tr><td class="pcell">${esc(projById(pid).name)}</td>${cells}<td class="c-sum">${fmtH(sum)}</td></tr>`;
+    }).join('');
+
+    const sumCells = days.map(dt => {
+      const h = recs.filter(t => t.date === dt).reduce((s, t) => s + t.hours, 0);
+      if (!h) return '<td class="c-empty">—</td>';
+      return `<td class="c-h ${Math.abs(h - 7) < 1e-9 ? 'ok' : 'warn'}">${fmtH(h)}</td>`;
+    }).join('');
+    const total = recs.reduce((s, t) => s + t.hours, 0);
+    const body = bodyRows + `<tr class="sumrow"><td class="pcell">每日合计</td>${sumCells}<td class="c-sum">${fmtH(total)}</td></tr>`;
+
+    inner = `
+      <div class="tbl-wrap"><table class="tbl monthly">
+        <thead><tr><th class="pcell">项目 \\ 日期</th>${head}<th class="c-sum">合计</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table></div>
+      <div class="legend">
+        <span class="lg lg-ok"><i></i>合计 = 7 小时（正常）</span>
+        <span class="lg lg-warn"><i></i>合计 ≠ 7 小时（警示）</span>
+        <span>点击日期单元格可修改当日工时；浅灰底为周末；已全部通过的日期为只读</span>
+      </div>`;
+  }
+
+  main.innerHTML = `
+    <div class="page-head">
+      <h2>我的月度工时</h2>
+      <div class="page-tools">
+        <input type="month" id="mo-month" value="${ym}">
+        <span class="muted">本月合计：${fmtH(recs.reduce((s, t) => s + t.hours, 0))} 小时</span>
+      </div>
+    </div>
+    <div class="card">${inner}</div>`;
+
+  const mi = $('#mo-month');
+  mi.addEventListener('change', () => { state.month = mi.value || curYM(); renderView(); });
+
+  main.querySelector('.tbl-wrap')?.addEventListener('click', e => {
+    const td = e.target.closest('td[data-date]');
+    if (!td) return;
+    if (td.classList.contains('locked')) { toast('该日记录已全部通过，不可修改', 'info'); return; }
+    openDayEditor(td.dataset.date);
+  });
+}
+
+/* ============================================================================
+ * 十二、日编辑弹窗（月度视图入口：修改当日全部记录，增删改、重新提交）
+ * ========================================================================== */
+function openDayEditor(date) {
+  const me = state.user;
+  const m = openModal(`编辑 ${date}（星期${weekdayOf(date)}）工时`, '<div id="de-body"></div>');
+  const body = m.querySelector('#de-body');
+  const myRecs = () => db.timesheets
+    .filter(t => t.userId === me.id && t.date === date)
+    .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric:true }));
+
+  function recCardHTML(t) {
+    if (t.status === 'approved') {  /* 已通过：只读展示 */
+      return `
+        <div class="rec-card ro">
+          <div class="rc-row"><b>${esc(projById(t.projectId).name)}</b>
+            <span>${fmtH(t.hours)} 小时</span>${badge(t.status)}
+            <span class="muted">已生效，不可修改</span></div>
+          <div class="ro-content">${esc(t.content)}</div>
+        </div>`;
+    }
+    let ps = myProjects(me);
+    if (!ps.some(p => p.id === t.projectId)) ps = ps.concat(projById(t.projectId));
+    return `
+      <div class="rec-card" data-id="${t.id}">
+        <div class="rc-row">
+          <select data-f="project">${ps.map(p => opt(p.id, p.name, t.projectId)).join('')}</select>
+          <input type="number" data-f="hours" step="0.5" min="0.5" max="24" value="${t.hours}" title="工时">
+          ${badge(t.status)}
+          <button class="btn btn-sm btn-danger" data-act="del">删除</button>
+        </div>
+        ${t.status === 'rejected' ? `<div class="audit-c">退回意见：${esc(t.auditComment)}</div>` : ''}
+        <textarea data-f="content" rows="2">${esc(t.content)}</textarea>
+        <div class="rc-acts">
+          <button class="btn btn-sm" data-act="save">保存</button>
+          <button class="btn btn-sm btn-primary" data-act="submit">保存并提交</button>
+        </div>
+      </div>`;
+  }
+
+  function addFormHTML() {
+    const ps = myProjects(me);
+    if (!ps.length) return '';
+    return `
+      <div class="rec-card add-card">
+        <div class="rc-row">
+          <select data-f="project"><option value="">选择项目</option>${ps.map(p => opt(p.id, p.name, '')).join('')}</select>
+          <input type="number" data-f="hours" step="0.5" min="0.5" max="24" placeholder="工时">
+          <span class="muted">新增记录</span>
+        </div>
+        <textarea data-f="content" rows="2" placeholder="工作内容"></textarea>
+        <div class="rc-acts">
+          <button class="btn btn-sm" data-act="add-save">保存草稿</button>
+          <button class="btn btn-sm btn-primary" data-act="add-submit">保存并提交</button>
+        </div>
+      </div>`;
+  }
+
+  function refresh() {
+    const list = myRecs();
+    const total = list.reduce((s, t) => s + t.hours, 0);
+    body.innerHTML = `
+      <div class="day-sum">今日合计：<b class="${total === 7 ? 't-ok' : total > 0 ? 't-warn' : ''}">${fmtH(total)}</b> 小时（标准 7 小时）</div>
+      ${list.length ? list.map(recCardHTML).join('') : '<div class="empty" style="padding:18px">该日暂无工时记录，可在下方新增</div>'}
+      ${addFormHTML()}`;
+  }
+  refresh();
+
+  /* 保存（或保存并提交）一条已有记录 */
+  async function saveCard(card, submitFlag) {
+    const t = rec(card.dataset.id);
+    const projectId = card.querySelector('[data-f="project"]').value;
+    const hours = Number(card.querySelector('[data-f="hours"]').value);
+    const content = card.querySelector('[data-f="content"]').value.trim();
+    if (!projectId || !hours || hours <= 0 || hours > 24 || !content) {
+      toast('请完整填写项目、工时（0~24）与工作内容', 'error'); return false;
+    }
+    if (!(await checkHoursRule(me.id, t.date, hours, t.id))) return false;
+    t.projectId = projectId; t.hours = hours; t.content = content;
+    if (submitFlag) transit(t, 'submit');
+    else saveDB();
+    toast(submitFlag ? '已保存并提交' : '已保存');
+    return true;
+  }
+
+  body.addEventListener('click', async e => {
+    const btn = e.target.closest('[data-act]');
+    if (!btn) return;
+    const act = btn.dataset.act;
+    const card = btn.closest('.rec-card');
+    if (act === 'save' || act === 'submit') {
+      if (card.classList.contains('add-card')) {
+        const projectId = card.querySelector('[data-f="project"]').value;
+        const hours = Number(card.querySelector('[data-f="hours"]').value);
+        const content = card.querySelector('[data-f="content"]').value.trim();
+        if (!projectId || !hours || hours <= 0 || hours > 24 || !content) {
+          toast('请完整填写项目、工时（0~24）与工作内容', 'error'); return;
+        }
+        if (!dayEditable(me.id, date)) { toast('该日工时已全部通过审核，不可新增记录', 'error'); return; }
+        if (!(await checkHoursRule(me.id, date, hours))) return;
+        const t = newTimesheet(me.id, projectId, date, hours, content);
+        if (act === 'submit') transit(t, 'submit'); else saveDB();
+        toast(act === 'submit' ? '已保存并提交' : '已保存草稿');
+      } else {
+        if (!(await saveCard(card, act === 'submit'))) return;
+      }
+      refresh();
+    } else if (act === 'del' && card && !card.classList.contains('add-card')) {
+      const t = rec(card.dataset.id);
+      if (!(await uiConfirm(`确定删除这条 ${fmtH(t.hours)} 小时的工时记录吗？`))) return;
+      db.timesheets = db.timesheets.filter(x => x.id !== t.id);
+      saveDB();
+      toast('已删除');
+      refresh();
+    }
+  });
+}
+
+/* ============================================================================
+ * 十三、项目负责人 - 工时审核页（单条 + 批量）
+ * ========================================================================== */
+const auditFilters = { project:'', member:'', from:'', to:'', status:'submitted' };
+
+function renderAudit(main) {
+  const me = state.user;
+  const projects = db.projects.filter(p => p.ownerId === me.id);
+  if (!projects.length) { main.innerHTML = empty('您当前没有负责的项目，暂无审核权限内的工时'); return; }
+  if (!auditFilters.project || !projects.some(p => p.id === auditFilters.project)) {
+    auditFilters.project = projects[0].id;
+  }
+  const f = auditFilters;
+  const memberIds = [...new Set(projects.flatMap(p => p.memberIds))];
+  const list = db.timesheets
+    .filter(t => projects.some(p => p.id === t.projectId))
+    .filter(t => !f.project || t.projectId === f.project)
+    .filter(t => !f.member || t.userId === f.member)
+    .filter(t => !f.from   || t.date >= f.from)
+    .filter(t => !f.to     || t.date <= f.to)
+    .filter(t => !f.status || t.status === f.status)
+    .sort((a, b) => b.date.localeCompare(a.date) || a.userId.localeCompare(b.userId));
+
+  const rows = list.map(t => {
+    const u = userById(t.userId);
+    const editable = t.status === 'submitted';
+    return `
+      <tr>
+        <td>${editable ? `<input type="checkbox" class="au-row" value="${t.id}">` : ''}</td>
+        <td>${esc(u.name)}</td>
+        <td>${esc(deptName(t.deptId))}</td>
+        <td class="left">${esc(projById(t.projectId).name)}</td>
+        <td>${t.date}</td>
+        <td>${fmtH(t.hours)}</td>
+        <td class="left td-content" title="${esc(t.content)}">${esc(t.content)}</td>
+        <td>${badge(t.status)}</td>
+        <td class="left td-content">${t.auditComment ? '<span class="t-warn">' + esc(t.auditComment) + '</span>' : '<span class="muted">—</span>'}</td>
+        <td><div class="td-acts">
+          ${editable
+            ? `<button class="btn btn-sm btn-primary" data-act="approve" data-id="${t.id}">通过</button>
+               <button class="btn btn-sm btn-danger" data-act="reject" data-id="${t.id}">退回</button>`
+            : '<span class="muted">—</span>'}
+        </div></td>
+      </tr>`;
+  }).join('');
+
+  const statusOpts = ['<option value="">全部状态</option>']
+    .concat(Object.keys(STATUS).map(k => opt(k, STATUS[k].label, f.status))).join('');
+
+  main.innerHTML = `
+    <div class="page-head"><h2>工时审核</h2></div>
+    <div class="card">
+      <div class="filters">
+        <div class="filter"><label>项目</label>
+          <select id="au-proj">${projects.map(p => opt(p.id, p.name, f.project)).join('')}</select></div>
+        <div class="filter"><label>成员</label>
+          <select id="au-member"><option value="">全部成员</option>${memberIds.map(id => opt(id, userById(id).name, f.member)).join('')}</select></div>
+        <div class="filter"><label>日期从</label><input type="date" id="au-from" value="${f.from}"></div>
+        <div class="filter"><label>至</label><input type="date" id="au-to" value="${f.to}"></div>
+        <div class="filter"><label>状态</label><select id="au-status">${statusOpts}</select></div>
+      </div>
+      ${list.length ? `
+      <div class="batch-bar">
+        <label class="mcheck"><input type="checkbox" id="au-checkall"> 全选</label>
+        <button class="btn btn-sm" id="au-invert">反选</button>
+        <span class="cnt" id="au-count">已选 0 条</span>
+        <button class="btn btn-sm btn-primary" id="au-batch-ok">批量通过</button>
+        <button class="btn btn-sm btn-danger" id="au-batch-rej">批量退回</button>
+      </div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr>
+          <th></th><th>姓名</th><th>部门</th><th class="left">项目</th><th>日期</th>
+          <th>工时(h)</th><th class="left">工作内容</th><th>状态</th><th class="left">退回意见</th><th>操作</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>` : '<div class="empty">暂无符合条件的工时记录（默认仅显示待审核，可调整筛选）</div>'}
+    </div>`;
+
+  bindFilter('au-proj', f, 'project');
+  bindFilter('au-member', f, 'member');
+  bindFilter('au-from', f, 'from');
+  bindFilter('au-to', f, 'to');
+  bindFilter('au-status', f, 'status');
+
+  const checkedIds = () => $$('.au-row').filter(c => c.checked).map(c => c.value);
+  const updCount = () => { $('#au-count').textContent = `已选 ${checkedIds().length} 条`; };
+
+  const tbl = main.querySelector('.tbl-wrap');
+  tbl.addEventListener('change', e => { if (e.target.classList.contains('au-row')) updCount(); });
+  $('#au-checkall').addEventListener('change', e => {
+    $$('.au-row').forEach(c => c.checked = e.target.checked);
+    updCount();
+  });
+  $('#au-invert').onclick = () => { $$('.au-row').forEach(c => c.checked = !c.checked); updCount(); };
+
+  /* 单条审核 */
+  tbl.addEventListener('click', async e => {
+    const btn = e.target.closest('[data-act]');
+    if (!btn) return;
+    const t = rec(btn.dataset.id);
+    if (!t) return;
+    if (btn.dataset.act === 'approve') {
+      const r = transit(t, 'approve');
+      r.ok ? toast('已通过该条工时') : toast(r.msg, 'error');
+      renderView();
+    } else if (btn.dataset.act === 'reject') {
+      const c = await uiPrompt('退回工时', '退回意见（必填，提交者可见）');
+      if (c === null) return;
+      const r = transit(t, 'reject', c);
+      r.ok ? toast('已退回该条工时') : toast(r.msg, 'error');
+      renderView();
+    }
+  });
+
+  /* 批量审核 */
+  $('#au-batch-ok').onclick = async () => {
+    const ids = checkedIds();
+    if (!ids.length) { toast('请先勾选要审核的记录', 'info'); return; }
+    if (!(await uiConfirm(`确定批量通过选中的 ${ids.length} 条工时记录吗？`))) return;
+    let n = 0;
+    ids.forEach(id => { const t = rec(id); if (t && transit(t, 'approve').ok) n++; });
+    toast(`已批量通过 ${n} 条工时记录`);
+    renderView();
+  };
+  $('#au-batch-rej').onclick = async () => {
+    const ids = checkedIds();
+    if (!ids.length) { toast('请先勾选要审核的记录', 'info'); return; }
+    const c = await uiPrompt('批量退回', '统一退回意见（必填，将应用于所有选中记录）');
+    if (c === null) return;
+    let n = 0;
+    ids.forEach(id => { const t = rec(id); if (t && transit(t, 'reject', c).ok) n++; });
+    toast(`已批量退回 ${n} 条工时记录`);
+    renderView();
+  };
+}
+
+/* ============================================================================
+ * 十四、管理员 - 基础数据管理（部门 / 项目 / 人员）
+ * ========================================================================== */
+let baseTab = 'dept';  // dept | project | user
+
+function renderBase(main) {
+  const tabs = [
+    { k:'dept',   label:'部门管理' },
+    { k:'project', label:'项目管理' },
+    { k:'user',   label:'人员管理' },
+  ];
+  main.innerHTML = `
+    <div class="page-head"><h2>基础数据管理</h2></div>
+    <div class="tabbar">${tabs.map(t =>
+      `<div class="tab-item ${baseTab === t.k ? 'active' : ''}" data-tab="${t.k}">${t.label}</div>`).join('')}</div>
+    <div id="base-body"></div>`;
+  $$('.tab-item').forEach(el => el.onclick = () => { baseTab = el.dataset.tab; renderView(); });
+  const body = $('#base-body');
+  if (baseTab === 'dept') renderDeptTab(body);
+  else if (baseTab === 'project') renderProjectTab(body);
+  else renderUserTab(body);
+}
+
+/* ---------- 部门管理 ---------- */
+function renderDeptTab(body) {
+  const rows = db.departments.map(d => {
+    const userCount = db.users.filter(u => u.deptId === d.id).length;
+    return `<tr>
+      <td class="left">${esc(d.name)}</td>
+      <td>${userCount}</td>
+      <td><div class="td-acts">
+        <button class="btn btn-sm" data-act="dept-edit" data-id="${d.id}">编辑</button>
+        <button class="btn btn-sm btn-danger" data-act="dept-del" data-id="${d.id}">删除</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+  body.innerHTML = `
+    <div class="card">
+      <div class="filters">
+        <div class="filter"><label>新增部门</label><input id="bd-name" placeholder="请输入部门名称"></div>
+        <div class="filter" style="justify-content:flex-end"><button class="btn btn-primary" id="bd-add">添加部门</button></div>
+      </div>
+      ${db.departments.length ? `
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th class="left">部门名称</th><th>关联人员数</th><th>操作</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>` : '<div class="empty">暂无部门数据</div>'}
+    </div>`;
+
+  $('#bd-add').onclick = () => {
+    const name = $('#bd-name').value.trim();
+    if (!name) { toast('部门名称不能为空', 'error'); return; }
+    if (db.departments.some(d => d.name === name)) { toast('该部门名称已存在', 'error'); return; }
+    db.departments.push({ id:'d' + (db.seq++), name });
+    saveDB();
+    toast('部门添加成功');
+    renderView();
+  };
+
+  body.addEventListener('click', async e => {
+    const btn = e.target.closest('[data-act]');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    const dep = db.departments.find(d => d.id === id);
+    if (!dep) return;
+    if (btn.dataset.act === 'dept-edit') {
+      const v = await uiPrompt('编辑部门', '部门名称', dep.name, false);
+      if (v === null) return;
+      if (db.departments.some(d => d.name === v && d.id !== id)) { toast('该部门名称已存在', 'error'); return; }
+      dep.name = v; saveDB(); toast('部门已更新'); renderView();
+    } else if (btn.dataset.act === 'dept-del') {
+      if (db.users.some(u => u.deptId === id)) { toast('该部门下仍有人员，不能删除', 'error'); return; }
+      if (db.timesheets.some(t => t.deptId === id)) { toast('该部门存在关联工时记录，不能删除', 'error'); return; }
+      if (!(await uiConfirm(`确定删除部门「${dep.name}」吗？`))) return;
+      db.departments = db.departments.filter(d => d.id !== id);
+      saveDB(); toast('部门已删除'); renderView();
+    }
+  });
+}
+
+/* ---------- 项目管理 ---------- */
+function renderProjectTab(body) {
+  const rows = db.projects.map(p => {
+    const owner = userById(p.ownerId);
+    const members = p.memberIds.map(id => userById(id).name).join('、');
+    const tsCount = db.timesheets.filter(t => t.projectId === p.id).length;
+    return `<tr>
+      <td class="left">${esc(p.name)}</td>
+      <td>${esc(owner.name)}</td>
+      <td class="left td-content" title="${esc(members)}">${esc(members)}</td>
+      <td>${tsCount}</td>
+      <td><div class="td-acts">
+        <button class="btn btn-sm" data-act="proj-edit" data-id="${p.id}">编辑</button>
+        <button class="btn btn-sm btn-danger" data-act="proj-del" data-id="${p.id}">删除</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+  body.innerHTML = `
+    <div class="card">
+      <div class="filters" style="justify-content:space-between">
+        <span class="muted">共 ${db.projects.length} 个项目</span>
+        <button class="btn btn-primary" id="pj-add">添加项目</button>
+      </div>
+      ${db.projects.length ? `
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th class="left">项目名称</th><th>负责人</th><th class="left">项目成员</th><th>工时记录数</th><th>操作</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>` : '<div class="empty">暂无项目数据</div>'}
+    </div>`;
+
+  $('#pj-add').onclick = () => openProjectForm(null);
+
+  body.addEventListener('click', async e => {
+    const btn = e.target.closest('[data-act]');
+    if (!btn) return;
+    const p = db.projects.find(x => x.id === btn.dataset.id);
+    if (!p) return;
+    if (btn.dataset.act === 'proj-edit') openProjectForm(p);
+    else if (btn.dataset.act === 'proj-del') {
+      if (db.timesheets.some(t => t.projectId === p.id)) {
+        toast('该项目存在关联工时记录，不能删除', 'error'); return;
+      }
+      if (!(await uiConfirm(`确定删除项目「${p.name}」吗？`))) return;
+      db.projects = db.projects.filter(x => x.id !== p.id);
+      saveDB(); toast('项目已删除'); renderView();
+    }
+  });
+}
+
+/* 项目新增/编辑弹窗 */
+function openProjectForm(proj) {
+  const isEdit = !!proj;
+  const pmUsers = db.users.filter(u => u.role === 'pm');
+  const candMembers = db.users.filter(u => u.role !== 'admin');
+  const m = openModal(isEdit ? '编辑项目' : '添加项目', `
+    <div class="form-grid">
+      <div class="fg"><label>项目名称 *</label>
+        <input id="pj-name" value="${proj ? esc(proj.name) : ''}" placeholder="如：电商平台">
+        <span class="ferr" id="pj-name-err"></span></div>
+      <div class="fg"><label>项目负责人 *</label>
+        <select id="pj-owner"><option value="">请选择负责人</option>
+          ${pmUsers.map(u => opt(u.id, u.name, proj ? proj.ownerId : '')).join('')}
+        </select>
+        <span class="ferr" id="pj-owner-err"></span></div>
+      <div class="fg wide"><label>项目成员（多选，负责人将自动加入） *</label>
+        <div class="member-checks">
+          ${candMembers.map(u => `
+            <label class="mcheck">
+              <input type="checkbox" value="${u.id}" ${proj && proj.memberIds.includes(u.id) ? 'checked' : ''}>
+              ${esc(u.name)}（${esc(deptName(u.deptId))}）
+            </label>`).join('')}
+        </div>
+        <span class="ferr" id="pj-mem-err"></span></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" data-close>取消</button>
+      <button class="btn btn-primary" id="pj-save">保存</button>
+    </div>`);
+
+  m.querySelector('#pj-save').onclick = () => {
+    const name = m.querySelector('#pj-name').value.trim();
+    const ownerId = m.querySelector('#pj-owner').value;
+    const memberIds = Array.from(m.querySelectorAll('.mcheck input:checked')).map(c => c.value);
+    let ok = true;
+    m.querySelector('#pj-name-err').textContent = '';
+    m.querySelector('#pj-owner-err').textContent = '';
+    m.querySelector('#pj-mem-err').textContent = '';
+    if (!name) { m.querySelector('#pj-name-err').textContent = '项目名称不能为空'; ok = false; }
+    else if (db.projects.some(p => p.name === name && (!isEdit || p.id !== proj.id))) {
+      m.querySelector('#pj-name-err').textContent = '项目名称已存在'; ok = false;
+    }
+    if (!ownerId) { m.querySelector('#pj-owner-err').textContent = '请选择负责人'; ok = false; }
+    if (!memberIds.length) { m.querySelector('#pj-mem-err').textContent = '请至少勾选一名成员'; ok = false; }
+    if (!ok) return;
+    if (!memberIds.includes(ownerId)) memberIds.push(ownerId); // 保证负责人可填报工时
+    if (isEdit) {
+      proj.name = name; proj.ownerId = ownerId; proj.memberIds = memberIds;
+    } else {
+      db.projects.push({ id:'p' + (db.seq++), name, ownerId, memberIds });
+    }
+    saveDB(); closeModal(); toast('项目保存成功'); renderView();
+  };
+}
+
+/* ---------- 人员管理 ---------- */
+function renderUserTab(body) {
+  const rows = db.users.map(u => `
+    <tr>
+      <td class="left">${esc(u.name)}</td>
+      <td>${esc(u.username)}</td>
+      <td>${ROLE_LABEL[u.role] || u.role}</td>
+      <td>${esc(deptName(u.deptId))}</td>
+      <td><div class="td-acts">
+        <button class="btn btn-sm" data-act="user-edit" data-id="${u.id}">编辑</button>
+        <button class="btn btn-sm" data-act="user-pwd" data-id="${u.id}">重置密码</button>
+      </div></td>
+    </tr>`).join('');
+  const deptOpts = db.departments.map(d => opt(d.id, d.name, '')).join('');
+  const roleOpts = opt('dev', '研发人员', 'dev') + opt('pm', '项目负责人', '');
+
+  body.innerHTML = `
+    <div class="card">
+      <div class="form-grid" style="margin-bottom:16px">
+        <div class="fg"><label>姓名 *</label><input id="us-name" placeholder="真实姓名"></div>
+        <div class="fg"><label>登录名 *</label><input id="us-username" placeholder="登录账号，如 dev7"></div>
+        <div class="fg"><label>初始密码 *</label><input id="us-password" placeholder="初始密码"></div>
+        <div class="fg"><label>角色 *</label><select id="us-role">${roleOpts}</select></div>
+        <div class="fg"><label>部门 *</label><select id="us-dept"><option value="">请选择部门</option>${deptOpts}</select></div>
+        <div class="fg" style="justify-content:flex-end"><button class="btn btn-primary" id="us-add">创建账号</button></div>
+      </div>
+      ${db.users.length ? `
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th class="left">姓名</th><th>登录名</th><th>角色</th><th>部门</th><th>操作</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>` : '<div class="empty">暂无人员数据</div>'}
+    </div>`;
+
+  $('#us-add').onclick = () => {
+    const name = $('#us-name').value.trim();
+    const username = $('#us-username').value.trim();
+    const password = $('#us-password').value;
+    const role = $('#us-role').value;
+    const deptId = $('#us-dept').value;
+    if (!name || !username || !password || !role || !deptId) {
+      toast('所有字段均为必填，请完整填写', 'error'); return;
+    }
+    if (db.users.some(u => u.username === username)) { toast('该登录名已存在', 'error'); return; }
+    db.users.push({ id:'u' + (db.seq++), username, password, name, role, deptId });
+    saveDB();
+    toast(`账号「${name}」创建成功`);
+    renderView();
+  };
+
+  body.addEventListener('click', async e => {
+    const btn = e.target.closest('[data-act]');
+    if (!btn) return;
+    const u = db.users.find(x => x.id === btn.dataset.id);
+    if (!u) return;
+    if (btn.dataset.act === 'user-edit') {
+      openUserForm(u);
+    } else if (btn.dataset.act === 'user-pwd') {
+      const v = await uiPrompt(`重置密码 - ${u.name}`, '新密码（必填）', '123456', false);
+      if (v === null) return;
+      u.password = v; saveDB();
+      toast(`已重置 ${u.name} 的密码`);
+    }
+  });
+}
+
+/* 人员编辑弹窗 */
+function openUserForm(u) {
+  const deptOpts = db.departments.map(d => opt(d.id, d.name, u.deptId)).join('');
+  const roleOpts = opt('dev', '研发人员', u.role) + opt('pm', '项目负责人', u.role);
+  const m = openModal(`编辑人员 - ${u.name}`, `
+    <div class="form-grid">
+      <div class="fg"><label>姓名 *</label><input id="ue-name" value="${esc(u.name)}"><span class="ferr" id="ue-err"></span></div>
+      <div class="fg"><label>登录名 *</label><input id="ue-username" value="${esc(u.username)}"></div>
+      <div class="fg"><label>角色 *</label><select id="ue-role">${roleOpts}</select></div>
+      <div class="fg"><label>部门 *</label><select id="ue-dept">${deptOpts}</select></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" data-close>取消</button>
+      <button class="btn btn-primary" id="ue-save">保存</button>
+    </div>`);
+  m.querySelector('#ue-save').onclick = () => {
+    const name = m.querySelector('#ue-name').value.trim();
+    const username = m.querySelector('#ue-username').value.trim();
+    const role = m.querySelector('#ue-role').value;
+    const deptId = m.querySelector('#ue-dept').value;
+    if (!name || !username || !role || !deptId) {
+      m.querySelector('#ue-err').textContent = '所有字段均为必填'; return;
+    }
+    if (db.users.some(x => x.username === username && x.id !== u.id)) {
+      m.querySelector('#ue-err').textContent = '该登录名已存在'; return;
+    }
+    u.name = name; u.username = username; u.role = role; u.deptId = deptId;
+    saveDB(); closeModal(); toast('人员信息已更新'); renderView();
+  };
+}
+
+/* ============================================================================
+ * 十五、管理员 - 全部工时信息列表（多条件筛选）
+ * ========================================================================== */
+const allTSFilters = { dept:'', project:'', user:'', from:'', to:'', status:'' };
+
+function renderAllTS(main) {
+  const f = allTSFilters;
+  const list = db.timesheets
+    .filter(t => !f.dept   || t.deptId === f.dept)
+    .filter(t => !f.project|| t.projectId === f.project)
+    .filter(t => !f.user   || t.userId === f.user)
+    .filter(t => !f.from   || t.date >= f.from)
+    .filter(t => !f.to     || t.date <= f.to)
+    .filter(t => !f.status || t.status === f.status)
+    .sort((a, b) => b.date.localeCompare(a.date) || a.userId.localeCompare(b.userId));
+
+  const rows = list.map(t => {
+    const u = userById(t.userId);
+    return `<tr>
+      <td>${esc(u.name)}</td>
+      <td>${esc(deptName(t.deptId))}</td>
+      <td class="left">${esc(projById(t.projectId).name)}</td>
+      <td>${t.date}</td>
+      <td>${fmtH(t.hours)}</td>
+      <td class="left td-content" title="${esc(t.content)}">${esc(t.content)}</td>
+      <td>${badge(t.status)}</td>
+      <td>${t.submitTime || '—'}</td>
+      <td>${t.auditTime || '—'}</td>
+      <td class="left td-content">${t.auditComment ? '<span class="t-warn">' + esc(t.auditComment) + '</span>' : '<span class="muted">—</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  const statusOpts = ['<option value="">全部状态</option>']
+    .concat(Object.keys(STATUS).map(k => opt(k, STATUS[k].label, f.status))).join('');
+
+  main.innerHTML = `
+    <div class="page-head"><h2>全部工时信息</h2><span class="muted">共 ${list.length} 条记录</span></div>
+    <div class="card">
+      <div class="filters">
+        <div class="filter"><label>部门</label>
+          <select id="al-dept"><option value="">全部部门</option>${db.departments.map(d => opt(d.id, d.name, f.dept)).join('')}</select></div>
+        <div class="filter"><label>项目</label>
+          <select id="al-proj"><option value="">全部项目</option>${db.projects.map(p => opt(p.id, p.name, f.project)).join('')}</select></div>
+        <div class="filter"><label>人员</label>
+          <select id="al-user"><option value="">全部人员</option>${db.users.map(u => opt(u.id, u.name, f.user)).join('')}</select></div>
+        <div class="filter"><label>日期从</label><input type="date" id="al-from" value="${f.from}"></div>
+        <div class="filter"><label>至</label><input type="date" id="al-to" value="${f.to}"></div>
+        <div class="filter"><label>状态</label><select id="al-status">${statusOpts}</select></div>
+      </div>
+      ${list.length ? `
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr>
+          <th>姓名</th><th>部门</th><th class="left">项目</th><th>日期</th><th>工时(h)</th>
+          <th class="left">工作内容</th><th>状态</th><th>提交时间</th><th>审核时间</th><th class="left">退回意见</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>` : '<div class="empty">暂无符合条件的工时记录</div>'}
+    </div>`;
+
+  bindFilter('al-dept', f, 'dept');
+  bindFilter('al-proj', f, 'project');
+  bindFilter('al-user', f, 'user');
+  bindFilter('al-from', f, 'from');
+  bindFilter('al-to', f, 'to');
+  bindFilter('al-status', f, 'status');
+}
+
+/* ============================================================================
+ * 十六、管理员 - 按项目统计视图 + Excel 导出（SheetJS / CSV 降级）
+ * ========================================================================== */
+const statsState = { project:'', month:curYM(), scope:'all' };
+
+/* 统计矩阵数据（渲染与导出共用同一数据结构口径） */
+function statsData(project, ym, scope) {
+  const nD = daysInMonth(ym);
+  const days = [];
+  for (let d = 1; d <= nD; d++) days.push(`${ym}-${pad(d)}`);
+  const inScope = t => (scope === 'approved' ? t.status === 'approved' : true);
+  const recs = db.timesheets.filter(t => t.projectId === project.id && t.date.startsWith(ym) && inScope(t));
+  const memberIds = [...new Set([project.ownerId, ...project.memberIds])];
+  const memberRows = memberIds.map(uid => {
+    const u = userById(uid);
+    const cells = days.map(dt => recs.filter(t => t.userId === uid && t.date === dt).reduce((s, t) => s + t.hours, 0));
+    const sum = cells.reduce((s, x) => s + x, 0);
+    return { name:u.name, dept:deptName(u.deptId), cells, sum };
+  });
+  const totals = days.map(dt => recs.filter(t => t.date === dt).reduce((s, t) => s + t.hours, 0));
+  const grand = recs.reduce((s, t) => s + t.hours, 0);
+  return { days, memberRows, totals, grand };
+}
+
+function renderStats(main) {
+  if (!db.projects.length) { main.innerHTML = empty('暂无项目数据，请先在「基础数据管理」中添加项目'); return; }
+  const f = statsState;
+  if (!f.project || !db.projects.some(p => p.id === f.project)) f.project = db.projects[0].id;
+  const proj = projById(f.project);
+  const ym = f.month || curYM();
+  const sd = statsData(proj, ym, f.scope);
+
+  const head = sd.days.map(dt => `
+    <th class="dth ${isWeekend(dt) ? 'we' : ''}">
+      <span class="dnum">${Number(dt.slice(8))}</span><span class="dwk">${weekdayOf(dt)}</span>
+    </th>`).join('');
+  const bodyRows = sd.memberRows.map(r => `
+    <tr>
+      <td class="pcell">${esc(r.name)}<div class="muted" style="font-weight:400;font-size:11px">${esc(r.dept)}</div></td>
+      ${r.cells.map(h => h ? `<td class="c-h">${fmtH(h)}</td>` : '<td class="c-empty">—</td>').join('')}
+      <td class="c-sum">${fmtH(r.sum)}</td>
+    </tr>`).join('');
+  const totalRow = `
+    <tr class="sumrow">
+      <td class="pcell">全员合计</td>
+      ${sd.totals.map(h => h ? `<td class="c-h">${fmtH(h)}</td>` : '<td class="c-empty">—</td>').join('')}
+      <td class="c-sum">${fmtH(sd.grand)}</td>
+    </tr>`;
+
+  main.innerHTML = `
+    <div class="page-head">
+      <h2>按项目统计</h2>
+      <div class="page-tools">
+        <select id="st-proj">${db.projects.map(p => opt(p.id, p.name, f.project)).join('')}</select>
+        <input type="month" id="st-month" value="${ym}">
+        <select id="st-scope">
+          ${opt('all', '统计口径：全部状态', f.scope)}
+          ${opt('approved', '统计口径：仅已通过', f.scope)}
+        </select>
+        <button class="btn btn-primary" id="st-export">导出 Excel</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="tbl-wrap"><table class="tbl monthly">
+        <thead><tr><th class="pcell">姓名 / 部门</th>${head}<th class="c-sum">合计</th></tr></thead>
+        <tbody>${bodyRows}${totalRow}</tbody>
+      </table></div>
+      <div class="legend">
+        <span>行 = 项目成员（含负责人），列 = 该月每一天，末行为全员合计；浅灰表头为周末</span>
+      </div>
+    </div>`;
+
+  bindFilter('st-proj', f, 'project');
+  bindFilter('st-scope', f, 'scope');
+  const mi = $('#st-month');
+  mi.addEventListener('change', () => { f.month = mi.value || curYM(); renderView(); });
+  $('#st-export').onclick = () => exportStats(proj, ym, f.scope);
+}
+
+/* 导出：优先 SheetJS xlsx，CDN 失败降级 CSV（BOM 头，Excel 中文不乱码） */
+function exportStats(project, ym, scope) {
+  const sd = statsData(project, ym, scope);
+  const header = ['姓名/部门'].concat(
+    sd.days.map(dt => `${dt.slice(5).replace('-', '/')} ${weekdayOf(dt)}${isWeekend(dt) ? '（休）' : ''}`)
+  ).concat(['合计']);
+  const rows = sd.memberRows.map(r => [`${r.name}（${r.dept}）`].concat(r.cells.map(h => h || '')).concat([r.sum]));
+  const matrix = [header].concat(rows, [['全员合计'].concat(sd.totals.map(h => h || '')).concat([sd.grand])]);
+  const fname = `项目统计_${project.name}_${ym}`;
+
+  if (typeof XLSX !== 'undefined') {
+    try {
+      const ws = XLSX.utils.aoa_to_sheet(matrix);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '项目统计');
+      XLSX.writeFile(wb, fname + '.xlsx');
+      toast(`导出成功：${fname}.xlsx`);
+      return;
+    } catch (err) { /* 导出失败时降级为 CSV */ }
+  }
+  const csv = matrix.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const blob = new Blob(['\uFEFF' + csv], { type:'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = fname + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(a.href);
+  toast(`SheetJS 不可用，已降级导出 CSV：${fname}.csv`, 'info');
+}
+
+/* ============================================================================
+ * 十七、初始化
+ * ========================================================================== */
+(function init() {
+  loadDB();
+  /* 恢复上次登录会话（可选，仅本地浏览器内） */
+  try {
+    const sid = localStorage.getItem(SESSION_KEY);
+    if (sid) {
+      const u = db.users.find(x => x.id === sid);
+      if (u) { state.user = u; state.view = u.role === 'admin' ? 'allts' : 'fill'; }
+    }
+  } catch (e) { /* 忽略会话恢复失败 */ }
+  render();
+})();
+</script>
+</body>
+</html>
