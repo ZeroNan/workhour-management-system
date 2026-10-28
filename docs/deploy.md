@@ -160,6 +160,25 @@ bash scripts/smoke.sh
 - **日期/时区异常**：确认服务器 `TZ=Asia/Shanghai`（config.js 强制；不要在本机临时改 TZ 跑服务）。
 - **升级前端**：public/ 为纯静态文件，替换后刷新即可；服务端无前端构建步骤。
 
-## 9. 从 SQLite 旧版迁移说明
+## 9. 版本升级与数据库迁移（重要前置）
+
+升级已有部署的代码后，如该版本变更了表结构，**必须先执行对应迁移脚本、再启动新版本服务**，否则相关接口会直接报错。
+
+| 迁移脚本 | 适用版本 | 作用 | 不执行的后果 |
+|---|---|---|---|
+| `scripts/migrate-integration.sql` | WPS 集成功能上线前（一次性） | `users` 加 `employee_no`；建 `api_keys` / `sync_idempotency` / `sync_log` | WPS 同步与集成管理接口不可用 |
+| `scripts/migrate-user-sort.sql` | **人员排序版本（users.sort_order）起** | `users` 加 `sort_order` 列 | **`/api/stats/project` 与 `GET/POST /api/users` 全部 500（日志 `ER_BAD_FIELD_ERROR 1054 Unknown column 'u.sort_order'`）** |
+
+```bash
+# 升级到含人员排序的版本前，在应用连接的库执行一次：
+mysql -h 127.0.0.1 -P 3306 -u root -p wtms < scripts/migrate-user-sort.sql
+```
+
+> 说明：
+> - **全新部署无需执行**——`scripts/init.sql` / `init-workhour.sql` 建表 DDL 已包含 `sort_order` 列，此脚本只针对**从旧版本升级的存量库**。
+> - `ALTER TABLE` 重复执行会报"列已存在"，执行一次即可；迁移保留全部现有数据。
+> - 建议升级前先做一次备份（见 §6）。
+
+## 10. 从 SQLite 旧版迁移说明
 
 本版数据库已统一为 MySQL，**不读取也不迁移**旧 SQLite 文件（`data/workhours.db` 若存在可直接删除）。如需保留历史工时，请在旧实例导出为 SQL/CSV 后，按 `timesheets` 表结构手工导入新 MySQL 库；演示数据由 `init.sql` / `seed:reset` 重新生成。

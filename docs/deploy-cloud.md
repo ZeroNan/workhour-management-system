@@ -80,6 +80,17 @@ DB_NAME=workhour
 > 数据库结构已在你之前的会话中通过 `scripts/init-workhour.sql` 初始化完成（7 张表 + 演示数据）。
 > 若需在服务器侧重建/重置：`mysql -h <数据库主机> -P <端口> -u <数据库账号> -p workhour < scripts/init-workhour.sql`
 
+### ⚠️ 1.3.1 升级已有部署：先跑数据库迁移（重要前置）
+
+**首次全新部署可跳过本节**（`init-workhour.sql` 建表 DDL 已包含全部列）。若是**对已运行的旧版本做代码升级**，先核对 `docs/deploy.md §9` 的迁移清单，按版本执行对应脚本后再启动新服务，例如：
+
+```bash
+# 升级到含人员排序的版本（users.sort_order）前，必须执行一次：
+mysql -h <数据库主机> -P 13306 -u <数据库账号> -p workhour < scripts/migrate-user-sort.sql
+```
+
+不执行的后果：`/api/stats/project` 与 `GET/POST /api/users` 全部 500（`ER_BAD_FIELD_ERROR 1054 Unknown column 'u.sort_order'`）。WPS 集成所需表则对应 `scripts/migrate-integration.sql`。
+
 ### 1.4 防火墙与安全组
 ```bash
 # (1) 服务器防火墙（ufw）放行 3456

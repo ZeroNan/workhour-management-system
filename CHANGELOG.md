@@ -3,6 +3,17 @@
 本文件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/) 规范，
 版本号遵循 [语义化版本 (Semantic Versioning)](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 新增 (Added)
+- 人员排序：`users` 增加 `sort_order` 字段。**升级前置：存量库必须先执行 `scripts/migrate-user-sort.sql`，否则 `/api/stats/project` 与 `GET/POST /api/users` 全部 500**（全新部署的 `init.sql` 已包含该列，无需执行）。
+
+### 修复 (Fixed)
+- 验证码错误由 500 修正为 400 `INVALID_CAPTCHA`；`err()` 对未注册错误码改为 fail-fast（构造期抛显式错误，不再静默劣化为 500）。
+- WPS 同步：幂等重放前移到业务校验之前——单日工时较大的批次重放不再被 400 `HOURS_EXCEEDED` 抢先拒绝（重放返回 200 `duplicate:true`；同 Key 不同内容返回 409）。
+- 变更类接口（新增/修改/提交/撤回/通过/退回）响应统一 camelCase，不再泄漏 `user_id` / `dept_id` / `owner_id` 等内部字段。
+- 月度视图：整日已通过的日期，空单元格同样置为只读，与"界面即约束"一致（此前保存时才报 409）。
+
 ## [2.0.0] - 2026-09
 
 ### 新增 (Added)
