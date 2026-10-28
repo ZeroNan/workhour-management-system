@@ -26,10 +26,13 @@ async function renderMonthly(main) {
 
     const bodyRows = data.projects.map(p => {
       const cells = days.map(dt => {
-        const h = recs.filter(t => t.projectId === p.id && t.date === dt).reduce((s, t) => s + t.hours, 0);
-        if (!h) return `<td class="c-empty editable" data-date="${dt}" title="点击填报/修改当日工时">—</td>`;
-        const editable = recs.filter(t => t.date === dt).some(t => t.status !== 'approved');
-        return `<td class="c-h ${editable ? 'editable' : 'locked'}" data-date="${dt}" title="${dt}">${fmtH(h)}</td>`;
+        const dayRecs = recs.filter(t => t.date === dt);
+        // 整日锁定 = 当日有记录且全部 approved（与 dayEditable 口径一致）；
+        // 空单元格同样受此约束，避免"界面可点、保存才报 409"（QA UI-06）。
+        const dayLocked = dayRecs.length > 0 && dayRecs.every(t => t.status === 'approved');
+        const h = dayRecs.filter(t => t.projectId === p.id).reduce((s, t) => s + t.hours, 0);
+        if (!h) return `<td class="c-empty ${dayLocked ? 'locked' : 'editable'}" data-date="${dt}" title="${dayLocked ? '该日已全部通过，不可修改' : '点击填报/修改当日工时'}">—</td>`;
+        return `<td class="c-h ${dayLocked ? 'locked' : 'editable'}" data-date="${dt}" title="${dt}">${fmtH(h)}</td>`;
       }).join('');
       const sum = recs.filter(t => t.projectId === p.id).reduce((s, t) => s + t.hours, 0);
       return `<tr><td class="pcell">${esc(p.name)}</td>${cells}<td class="c-sum">${fmtH(sum)}</td></tr>`;
