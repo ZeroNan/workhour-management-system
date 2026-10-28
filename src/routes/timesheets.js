@@ -19,6 +19,10 @@ function serialize(t) {
   };
 }
 
+// 变更类接口（create/update/submit/withdraw/approve/reject）的响应同样走 serialize：
+// 统一 camelCase 契约，并不再把 user_id/dept_id/owner_id 等内部字段泄漏给前端。
+const serializeResult = (r) => (r && r.record ? { ...r, record: serialize(r.record) } : r);
+
 // 25. 月度视图（放在参数路由前，避免 :id 吞掉）
 router.get('/monthly', requireAuth, wrap(async (req, res) => {
   const month = String(req.query.month || '');
@@ -77,7 +81,7 @@ router.get('/day-summary', requireAuth, wrap(async (req, res) => {
 
 // 22. 修改
 router.put('/:id', requireAuth, wrap(async (req, res) => {
-  res.json(await svc.update(req.user, Number(req.params.id), req.body || {}));
+  res.json(serializeResult(await svc.update(req.user, Number(req.params.id), req.body || {})));
 }));
 
 // 23. 删除
@@ -88,20 +92,20 @@ router.delete('/:id', requireAuth, wrap(async (req, res) => {
 
 // 24. 提交（幂等）
 router.post('/:id/submit', requireAuth, wrap(async (req, res) => {
-  res.json(await svc.submit(req.user, Number(req.params.id)));
+  res.json(serializeResult(await svc.submit(req.user, Number(req.params.id))));
 }));
 
 // 26. 撤回（submitted → draft；提交者/项目 owner/admin）
 router.post('/:id/withdraw', requireAuth, wrap(async (req, res) => {
-  res.json(await svc.withdraw(req.user, Number(req.params.id)));
+  res.json(serializeResult(await svc.withdraw(req.user, Number(req.params.id))));
 }));
 
 // 27/28. 单条审核（挂在这里供审核页调用；行级权限在 service 内）
 router.post('/:id/approve', requireRole('pm', 'admin'), wrap(async (req, res) => {
-  res.json(await svc.audit(req.user, Number(req.params.id), 'approve'));
+  res.json(serializeResult(await svc.audit(req.user, Number(req.params.id), 'approve')));
 }));
 router.post('/:id/reject', requireRole('pm', 'admin'), wrap(async (req, res) => {
-  res.json(await svc.audit(req.user, Number(req.params.id), 'reject', req.body?.comment));
+  res.json(serializeResult(await svc.audit(req.user, Number(req.params.id), 'reject', req.body?.comment)));
 }));
 
 // 18. 本人记录列表（自动限定本人；放最后避免与子路径冲突）
@@ -127,7 +131,7 @@ router.get('/', requireAuth, wrap(async (req, res) => {
 // 21. 新增（放 GET / 之后无碍，POST 与 GET 路径互不冲突）
 router.post('/', requireAuth, wrap(async (req, res) => {
   const result = await svc.create(req.user, req.body || {});
-  res.status(201).json(result);
+  res.status(201).json(serializeResult(result));
 }));
 
 export default router;
