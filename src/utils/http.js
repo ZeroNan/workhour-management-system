@@ -18,6 +18,7 @@ export const ERR = {
   COMMENT_REQUIRED: { status: 400, code: 'COMMENT_REQUIRED' },
   INVALID_CREDENTIALS: { status: 401, code: 'INVALID_CREDENTIALS' },
   ACCOUNT_LOCKED: { status: 423, code: 'ACCOUNT_LOCKED' },
+  INVALID_CAPTCHA: { status: 400, code: 'INVALID_CAPTCHA' },
   // ---- WPS / 开放集成接口专用 ----
   API_KEY_MISSING: { status: 401, code: 'API_KEY_MISSING' },
   API_KEY_INVALID: { status: 401, code: 'API_KEY_INVALID' },
@@ -40,7 +41,20 @@ export class ApiError extends Error {
   }
 }
 
-export const err = (name, message, details) => new ApiError(ERR[name], message, details);
+/**
+ * 错误工厂：按 ERR 表中的键名构造 ApiError。
+ * fail-fast：未注册的键名在构造期即抛错（开发期暴露缺陷），
+ * 避免 `new ApiError(undefined)` 读取 .status 抛 TypeError 被兜成 500 INTERNAL。
+ * @param {keyof typeof ERR} name ERR 表键名
+ * @param {string} [message] 覆盖默认 message（缺省用 def.code）
+ * @param {unknown} [details] 附加错误明细
+ * @returns {ApiError}
+ */
+export const err = (name, message, details) => {
+  const def = ERR[name];
+  if (!def) throw new Error('[err] 未注册错误码: ' + name);
+  return new ApiError(def, message, details);
+};
 
 /**
  * async 路由包装器：Express 4 不会自动捕获 async handler 抛出的 rejection，
