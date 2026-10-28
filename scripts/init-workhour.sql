@@ -44,6 +44,7 @@ CREATE TABLE users (
   name                 VARCHAR(50) NOT NULL,
   role                 VARCHAR(10) NOT NULL,
   dept_id              INT,
+  sort_order           INT NOT NULL DEFAULT 0,
   must_change_password TINYINT NOT NULL DEFAULT 0,
   failed_attempts      INT NOT NULL DEFAULT 0,
   locked_until         BIGINT,

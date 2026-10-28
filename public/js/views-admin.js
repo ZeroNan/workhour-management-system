@@ -188,6 +188,7 @@ async function renderUserTab(body) {
       <td>${esc(u.username)}</td>
       <td>${ROLE_LABEL[u.role] || u.role}</td>
       <td>${esc(u.deptName || '—')}</td>
+      <td>${u.sortOrder ?? 0}</td>
       <td>${u.mustChangePassword ? '<span class="tag-daishen">待改密</span>' : '<span class="muted">正常</span>'}</td>
       <td><div class="td-acts">
         <button class="btn btn-sm" data-act="user-edit" data-id="${u.id}">编辑</button>
@@ -205,11 +206,12 @@ async function renderUserTab(body) {
         <div class="fg"><label>初始密码（最短 8 位） *</label><input id="us-password" placeholder="初始密码"></div>
         <div class="fg"><label>角色 *</label><select id="us-role">${roleOpts}</select></div>
         <div class="fg"><label>部门 *</label><select id="us-dept"><option value="">请选择部门</option>${deptOpts}</select></div>
+        <div class="fg"><label>排列顺序（越小越靠前）</label><input id="us-sort" type="number" min="0" max="2147483647" step="1" value="0"></div>
         <div class="fg" style="justify-content:flex-end"><button class="btn btn-primary" id="us-add">创建账号</button></div>
       </div>
       ${users.length ? `
       <div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th class="left">姓名</th><th>登录名</th><th>角色</th><th>部门</th><th>密码状态</th><th>操作</th></tr></thead>
+        <thead><tr><th class="left">姓名</th><th>登录名</th><th>角色</th><th>部门</th><th>排列顺序</th><th>密码状态</th><th>操作</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>` : '<div class="empty">暂无人员数据</div>'}
     </div>`;
@@ -220,12 +222,13 @@ async function renderUserTab(body) {
     const password = $('#us-password').value;
     const role = $('#us-role').value;
     const deptId = $('#us-dept').value;
+    const sortOrder = Number($('#us-sort').value);
     if (!name || !username || !password || !role || !deptId) {
       toast('所有字段均为必填，请完整填写', 'error'); return;
     }
     if (password.length < 8) { toast('初始密码最短 8 位', 'error'); return; }
     try {
-      await api.post('/api/users', { name, username, password, role, deptId: Number(deptId) });
+      await api.post('/api/users', { name, username, password, role, deptId: Number(deptId), sortOrder });
       toast(`账号「${name}」创建成功，首次登录需修改密码`);
       renderView();
     } catch (e) { toast(e.message || '创建失败', 'error'); }
@@ -259,6 +262,7 @@ function openUserForm(u, departments) {
       <div class="fg"><label>登录名 *</label><input id="ue-username" value="${esc(u.username)}"></div>
       <div class="fg"><label>角色 *</label><select id="ue-role">${roleOpts}</select></div>
       <div class="fg"><label>部门 *</label><select id="ue-dept">${deptOpts}</select></div>
+      <div class="fg"><label>排列顺序（越小越靠前）</label><input id="ue-sort" type="number" min="0" max="2147483647" step="1" value="${u.sortOrder ?? 0}"></div>
     </div>
     <div class="modal-actions">
       <button class="btn" data-close>取消</button>
@@ -269,11 +273,12 @@ function openUserForm(u, departments) {
     const username = m.querySelector('#ue-username').value.trim();
     const role = m.querySelector('#ue-role').value;
     const deptId = m.querySelector('#ue-dept').value;
+    const sortOrder = Number(m.querySelector('#ue-sort').value);
     if (!name || !username || !role || !deptId) {
       m.querySelector('#ue-err').textContent = '所有字段均为必填'; return;
     }
     try {
-      await api.put(`/api/users/${u.id}`, { name, username, role, deptId: Number(deptId) });
+      await api.put(`/api/users/${u.id}`, { name, username, role, deptId: Number(deptId), sortOrder });
       closeModal(); toast('人员信息已更新'); renderView();
     } catch (e) {
       if (e.code === 'DUPLICATE_USERNAME') m.querySelector('#ue-err').textContent = e.message;

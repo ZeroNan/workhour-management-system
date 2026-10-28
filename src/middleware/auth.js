@@ -69,6 +69,7 @@ export function requireAuth(req, _res, next) {
 export function requireRole(...roles) {
   return (req, _res, next) => {
     if (!req.user) return next(err('UNAUTHORIZED', '未登录或登录已过期'));
+    if (req.user.mustChangePassword) return next(err('FORBIDDEN', '首次登录请先修改密码'));
     if (!roles.includes(req.user.role)) return next(err('FORBIDDEN', '无权访问该接口'));
     next();
   };

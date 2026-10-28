@@ -64,17 +64,21 @@ async function validatePayload(userId, body, { excludeId = null } = {}) {
 
 /** 新增（submit=true 直接落为 submitted） */
 export async function create(user, body) {
-  const { projectId, date, hours, content } = await validatePayload(user.id, body);
-  const submit = body.submit === true;
-  const now = nowStr();
-  const dept = await db.prepare('SELECT dept_id FROM users WHERE id = ?').get(user.id);
-  const info = await db.prepare(`
-    INSERT INTO timesheets(user_id,dept_id,project_id,date,hours,content,status,submit_time,audit_time,auditor_id,audit_comment,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-  `).run(user.id, dept.dept_id, projectId, date, hours, content,
-    submit ? 'submitted' : 'draft', submit ? now : null, null, null, '', now, now);
-  const record = await getRecord(info.lastInsertRowid);
-  return { record, dayTotal: await dayTotal(user.id, date) };
+  return db.transaction(async () => {
+    // 所有填报入口共用用户行锁，串行执行合计校验和写入（包括跨日期修改）。
+    await db.prepare('SELECT id FROM users WHERE id = ? FOR UPDATE').get(user.id);
+    const { projectId, date, hours, content } = await validatePayload(user.id, body);
+    const submit = body.submit === true;
+    const now = nowStr();
+    const dept = await db.prepare('SELECT dept_id FROM users WHERE id = ?').get(user.id);
+    const info = await db.prepare(`
+      INSERT INTO timesheets(user_id,dept_id,project_id,date,hours,content,status,submit_time,audit_time,auditor_id,audit_comment,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(user.id, dept.dept_id, projectId, date, hours, content,
+      submit ? 'submitted' : 'draft', submit ? now : null, null, null, '', now, now);
+    const record = await getRecord(info.lastInsertRowid);
+    return { record, dayTotal: await dayTotal(user.id, date) };
+  })();
 }
 
 /**
@@ -84,29 +88,33 @@ export async function create(user, body) {
  * - approved（已生效）记录只读，不可修改。
  */
 export async function update(user, id, body) {
-  const old = await db.prepare('SELECT * FROM timesheets WHERE id = ?').get(id);
-  if (!old || old.user_id !== user.id) throw err('NOT_FOUND', '记录不存在');
-  if (old.status === 'approved') {
-    throw err('STATE_CONFLICT', '该记录已通过审核并生效，不可修改', { currentStatus: old.status });
-  }
-  if (!['draft', 'rejected', 'submitted'].includes(old.status)) {
-    throw err('STATE_CONFLICT', '当前状态不可修改，请刷新后重试', { currentStatus: old.status });
-  }
-  const { projectId, date, hours, content } = await validatePayload(user.id, body, { excludeId: id });
-  const submit = body.submit === true;
-  const now = nowStr();
-  // 条件更新：status 未变才生效（并发保护）
-  const info = await db.prepare(`
-    UPDATE timesheets SET project_id=?, date=?, hours=?, content=?,
-      status=?, submit_time=?, audit_time=NULL, auditor_id=NULL, audit_comment='', updated_at=?
-    WHERE id=? AND status IN ('draft','rejected','submitted')
-  `).run(projectId, date, hours, content, submit ? 'submitted' : 'draft',
-    submit ? now : null, now, id);
-  if (info.changes === 0) {
-    throw err('STATE_CONFLICT', '该记录已被审核或已被修改，请刷新后重试');
-  }
-  const record = await getRecord(id);
-  return { record, dayTotal: await dayTotal(user.id, date) };
+  return db.transaction(async () => {
+    // 所有填报入口共用用户行锁，串行执行合计校验和写入（包括跨日期修改）。
+    await db.prepare('SELECT id FROM users WHERE id = ? FOR UPDATE').get(user.id);
+    const old = await db.prepare('SELECT * FROM timesheets WHERE id = ?').get(id);
+    if (!old || old.user_id !== user.id) throw err('NOT_FOUND', '记录不存在');
+    if (old.status === 'approved') {
+      throw err('STATE_CONFLICT', '该记录已通过审核并生效，不可修改', { currentStatus: old.status });
+    }
+    if (!['draft', 'rejected', 'submitted'].includes(old.status)) {
+      throw err('STATE_CONFLICT', '当前状态不可修改，请刷新后重试', { currentStatus: old.status });
+    }
+    const { projectId, date, hours, content } = await validatePayload(user.id, body, { excludeId: id });
+    const submit = body.submit === true;
+    const now = nowStr();
+    // 条件更新：status 未变才生效（并发保护）
+    const info = await db.prepare(`
+      UPDATE timesheets SET project_id=?, date=?, hours=?, content=?,
+        status=?, submit_time=?, audit_time=NULL, auditor_id=NULL, audit_comment='', updated_at=?
+      WHERE id=? AND status IN ('draft','rejected','submitted')
+    `).run(projectId, date, hours, content, submit ? 'submitted' : 'draft',
+      submit ? now : null, now, id);
+    if (info.changes === 0) {
+      throw err('STATE_CONFLICT', '该记录已被审核或已被修改，请刷新后重试');
+    }
+    const record = await getRecord(id);
+    return { record, dayTotal: await dayTotal(user.id, date) };
+  })();
 }
 
 /**
@@ -178,50 +186,52 @@ export async function submit(user, id) {
  * @returns {Promise<{record, idempotent?}>}
  */
 export async function audit(actor, id, action, comment) {
-  const old = await db.prepare(`
-    SELECT t.*, p.owner_id FROM timesheets t JOIN projects p ON p.id = t.project_id WHERE t.id = ?`).get(id);
-  if (!old) throw err('NOT_FOUND', '记录不存在');
-  // 权限：项目 owner(pm) 或 admin
-  if (actor.role !== 'admin' && actor.id !== old.owner_id) {
-    throw err('FORBIDDEN', '您不是该项目负责人，无权审核');
-  }
-  // 自审拦截（admin 亦不可审自己，规则统一：审核人==提交者即 403）
-  if (actor.id === old.user_id) {
-    throw err('SELF_AUDIT_FORBIDDEN', '本人记录由管理员代审');
-  }
-  if (action === 'approve') {
-    // 幂等：已 approved → 200
-    if (old.status === 'approved') return { record: await getRecord(id), idempotent: true };
-    const now = nowStr();
-    const info = await db.prepare(`
-      UPDATE timesheets SET status='approved', audit_time=?, auditor_id=?, updated_at=?
-      WHERE id=? AND status='submitted'`).run(now, actor.id, now, id);
-    if (info.changes === 0) {
-      const cur = await db.prepare('SELECT status FROM timesheets WHERE id = ?').get(id);
-      if (cur && cur.status === 'approved') return { record: await getRecord(id), idempotent: true };
-      throw err('STATE_CONFLICT', '该记录已被处理或已被修改，请刷新后重试', { currentStatus: cur ? cur.status : null });
+  return db.transaction(async () => {
+    const old = await db.prepare(`
+      SELECT t.*, p.owner_id FROM timesheets t JOIN projects p ON p.id = t.project_id WHERE t.id = ? FOR UPDATE`).get(id);
+    if (!old) throw err('NOT_FOUND', '记录不存在');
+    // 权限：项目 owner(pm) 或 admin
+    if (actor.role !== 'admin' && actor.id !== old.owner_id) {
+      throw err('FORBIDDEN', '您不是该项目负责人，无权审核');
     }
-    return { record: await getRecord(id) };
-  } else if (action === 'reject') {
-    const c = String(comment || '').trim();
-    if (!c) throw err('COMMENT_REQUIRED', '退回意见不能为空');
-    if (old.status === 'rejected' && old.audit_comment === c) {
-      return { record: await getRecord(id), idempotent: true };
+    // 自审拦截（admin 亦不可审自己，规则统一：审核人==提交者即 403）
+    if (actor.id === old.user_id) {
+      throw err('SELF_AUDIT_FORBIDDEN', '本人记录由管理员代审');
     }
-    const now = nowStr();
-    const info = await db.prepare(`
-      UPDATE timesheets SET status='rejected', audit_time=?, auditor_id=?, audit_comment=?, updated_at=?
-      WHERE id=? AND status='submitted'`).run(now, actor.id, c, now, id);
-    if (info.changes === 0) {
-      const cur = await db.prepare('SELECT status, audit_comment FROM timesheets WHERE id = ?').get(id);
-      if (cur && cur.status === 'rejected' && cur.audit_comment === c) {
+    if (action === 'approve') {
+      // 幂等：已 approved → 200
+      if (old.status === 'approved') return { record: await getRecord(id), idempotent: true };
+      const now = nowStr();
+      const info = await db.prepare(`
+        UPDATE timesheets SET status='approved', audit_time=?, auditor_id=?, updated_at=?
+        WHERE id=? AND status='submitted'`).run(now, actor.id, now, id);
+      if (info.changes === 0) {
+        const cur = await db.prepare('SELECT status FROM timesheets WHERE id = ?').get(id);
+        if (cur && cur.status === 'approved') return { record: await getRecord(id), idempotent: true };
+        throw err('STATE_CONFLICT', '该记录已被处理或已被修改，请刷新后重试', { currentStatus: cur ? cur.status : null });
+      }
+      return { record: await getRecord(id) };
+    } else if (action === 'reject') {
+      const c = String(comment || '').trim();
+      if (!c) throw err('COMMENT_REQUIRED', '退回意见不能为空');
+      if (old.status === 'rejected' && old.audit_comment === c) {
         return { record: await getRecord(id), idempotent: true };
       }
-      throw err('STATE_CONFLICT', '该记录已被处理或已被修改，请刷新后重试', { currentStatus: cur ? cur.status : null });
+      const now = nowStr();
+      const info = await db.prepare(`
+        UPDATE timesheets SET status='rejected', audit_time=?, auditor_id=?, audit_comment=?, updated_at=?
+        WHERE id=? AND status='submitted'`).run(now, actor.id, c, now, id);
+      if (info.changes === 0) {
+        const cur = await db.prepare('SELECT status, audit_comment FROM timesheets WHERE id = ?').get(id);
+        if (cur && cur.status === 'rejected' && cur.audit_comment === c) {
+          return { record: await getRecord(id), idempotent: true };
+        }
+        throw err('STATE_CONFLICT', '该记录已被处理或已被修改，请刷新后重试', { currentStatus: cur ? cur.status : null });
+      }
+      return { record: await getRecord(id) };
     }
-    return { record: await getRecord(id) };
-  }
-  throw err('VALIDATION_ERROR', '未知审核操作');
+    throw err('VALIDATION_ERROR', '未知审核操作');
+  })();
 }
 
 /** 批量审核：逐条独立处理、不整体回滚；selfSubmitted → skipped */

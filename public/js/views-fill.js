@@ -240,7 +240,7 @@ function openRecordEditor(t, myProjectsCache) {
       toast('请完整填写项目、日期、工时（0~24）与工作内容', 'error'); return;
     }
     if (date > todayStr()) { toast('工时日期不能晚于今天', 'error'); return; }
-    if (!(await checkHoursRule(date, hours, t.hours))) return;  // 当日合计排除本条现有工时
+    if (!(await checkHoursRule(date, hours, date === t.date ? t.hours : 0))) return;  // 当日合计排除本条现有工时
     try {
       await api.put(`/api/timesheets/${t.id}`, { projectId: Number(projectId), date, hours, content, submit: submitFlag });
       closeModal();

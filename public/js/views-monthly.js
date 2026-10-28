@@ -155,7 +155,7 @@ async function openDayEditor(date) {
   body.addEventListener('click', async e => {
     const btn = e.target.closest('[data-act]');
     if (!btn) return;
-    const act = btn.dataset.act;
+    const act = btn.dataset.act.replace(/^add-/, '');
     const card = btn.closest('.rec-card');
     if (act === 'save' || act === 'submit') {
       const projectId = card.querySelector('[data-f="project"]').value;

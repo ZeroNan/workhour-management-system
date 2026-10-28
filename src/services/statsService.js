@@ -68,9 +68,11 @@ export async function projectStats(projectId, month, scope, accessibleProjectIds
     .all(...pids)).forEach(r => { if (!memberIds.includes(r.user_id)) memberIds.push(r.user_id); });
   if (projectId != null && ownerId != null && !memberIds.includes(ownerId)) memberIds.push(ownerId);
 
+  rows.forEach(r => { if (!memberIds.includes(r.user_id)) memberIds.push(r.user_id); });
+
   const users = {};
   if (memberIds.length) {
-    (await db.prepare(`SELECT u.id, u.name, d.name AS dept FROM users u
+    (await db.prepare(`SELECT u.id, u.name, u.sort_order, d.name AS dept FROM users u
       LEFT JOIN departments d ON d.id = u.dept_id WHERE u.id IN (${memberIds.map(() => '?').join(',')})`)
       .all(...memberIds)).forEach(u => { users[u.id] = u; });
   }
@@ -82,6 +84,7 @@ export async function projectStats(projectId, month, scope, accessibleProjectIds
     byDate[r.date] = (byDate[r.date] || 0) + r.hours;
   });
 
+  memberIds.sort((a, b) => (users[a]?.sort_order || 0) - (users[b]?.sort_order || 0) || a - b);
   const memberRows = memberIds.map(uid => {
     const u = users[uid] || { name: '—', dept: null };
     const cells = days.map(dt => byUser[uid]?.[dt] || 0);

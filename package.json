@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
+    "test": "node --experimental-vm-modules --test tests/*.test.mjs",
     "seed": "node src/seed.js",
     "seed:reset": "node src/seed.js --reset"
   },

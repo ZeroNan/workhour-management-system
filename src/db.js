@@ -62,6 +62,8 @@ const db = {
   transaction: (fn) => async (...args) => {
     const conn = await pool.getConnection();
     try {
+      // 等待用户行锁后，合计查询必须读取刚提交的数据，不能复用更早的快照。
+      await conn.query('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
       await conn.beginTransaction();
       const result = await als.run(conn, () => fn(...args));
       await conn.commit();

@@ -61,120 +61,120 @@ export async function syncWorkHours(apiKey, body, idempotencyKey) {
     throw err('PAYLOAD_TOO_LARGE', `单次最多提交 ${MAX_RECORDS} 条工时`, { max: MAX_RECORDS });
   }
 
-  // 2) 解析项目
-  let proj;
-  if (project.projectId) {
-    proj = await db.prepare('SELECT id,owner_id,name FROM projects WHERE id=?').get(Number(project.projectId));
-  } else {
-    proj = await db.prepare('SELECT id,owner_id,name FROM projects WHERE name=?').get(project.projectName);
-  }
-  if (!proj) throw err('PROJECT_NOT_FOUND', '项目不存在，请确认 projectId 或 projectName', { project });
-
-  // 3) 逐条解析 + 校验
-  const errors = [];
-  const parsed = [];
-  const dailyTotals = new Map(); // `${userId}|${date}` -> hours（本批内合计）
-  for (let i = 0; i < records.length; i++) {
-    const r = records[i] || {};
-    const idx = i + 1;
-
-    const employeeNo = r.employeeNo ?? body.employee?.employeeNo;
-    const username = r.username;
-    if (!employeeNo && !username) {
-      errors.push({ index: idx, field: 'employeeNo', message: '缺少 employeeNo 或 username' });
-      continue;
-    }
-    let emp;
-    if (employeeNo) {
-      emp = await db.prepare('SELECT id,name,dept_id FROM users WHERE employee_no=?').get(String(employeeNo));
-    }
-    if (!emp && username) {
-      emp = await db.prepare('SELECT id,name,dept_id FROM users WHERE username=?').get(String(username));
-    }
-    if (!emp) {
-      errors.push({ index: idx, field: 'employeeNo', message: `员工不存在：${employeeNo || username}` });
-      continue;
-    }
-
-    const date = r.date;
-    if (!isValidDateStr(date)) {
-      errors.push({ index: idx, field: 'date', message: '日期非法，应为 YYYY-MM-DD' });
-      continue;
-    }
-    if (date > serverToday()) {
-      errors.push({ index: idx, field: 'date', message: '工时日期不能晚于今天' });
-      continue;
-    }
-    const h = Number(r.hours);
-    if (!Number.isFinite(h) || h <= 0 || h > 24) {
-      errors.push({ index: idx, field: 'hours', message: '工时须为 0 < h <= 24 的数字' });
-      continue;
-    }
-    const content = (typeof r.taskDesc === 'string' && r.taskDesc.trim()) ? r.taskDesc.trim() : '(WPS 同步)';
-    parsed.push({ userId: emp.id, deptId: emp.dept_id, date, hours: h, content, name: emp.name });
-    const k = `${emp.id}|${date}`;
-    dailyTotals.set(k, (dailyTotals.get(k) || 0) + h);
-  }
-  if (errors.length) {
-    throw err('INVALID_RECORD', `有 ${errors.length} 条记录校验未通过`, { errors });
-  }
-
-  // 4) 每日合计 <= 24（含库中已有）
-  for (const [k, add] of dailyTotals) {
-    const [userId, date] = k.split('|');
-    const row = await db.prepare('SELECT COALESCE(SUM(hours),0) AS t FROM timesheets WHERE user_id=? AND date=?')
-      .get(Number(userId), date);
-    const total = (Number(row.t) || 0) + add;
-    if (total > 24 + 1e-9) {
-      const who = parsed.find((p) => String(p.userId) === userId && p.date === date)?.name || '';
-      throw err('HOURS_EXCEEDED', `员工 ${who} 在 ${date} 的工时合计将超 24 小时（含已有 ${Number(row.t) || 0}）`);
-    }
-  }
-
-  // 5) 幂等判定
-  const bodyHash = createHash('sha256').update(JSON.stringify(body)).digest('hex');
-  if (idempotencyKey) {
-    const existing = await db.prepare('SELECT body_hash,response_code,response_body FROM sync_idempotency WHERE idem_key=?')
-      .get(idempotencyKey);
-    if (existing) {
-      if (existing.body_hash === bodyHash) {
-        const payload = JSON.parse(existing.response_body || '{}');
-        return { ...payload, duplicate: true, idempotencyKey };
+  return db.transaction(async () => {
+    await db.prepare('SELECT id FROM api_keys WHERE id = ? FOR UPDATE').get(apiKey.id);
+    // 幂等重放先于业务校验；API 密钥行锁防止同一集成的并发重试重复入库。
+    const bodyHash = createHash('sha256').update(JSON.stringify(body)).digest('hex');
+    if (idempotencyKey) {
+      const existing = await db.prepare('SELECT body_hash,response_code,response_body FROM sync_idempotency WHERE idem_key=?')
+        .get(idempotencyKey);
+      if (existing) {
+        if (existing.body_hash === bodyHash) {
+          const payload = JSON.parse(existing.response_body || '{}');
+          return { ...payload, duplicate: true, idempotencyKey };
+        }
+        throw err('IDEMPOTENCY_CONFLICT', '同一 Idempotency-Key 对应的请求内容不一致', { idempotencyKey });
       }
-      throw err('IDEMPOTENCY_CONFLICT', '同一 Idempotency-Key 对应的请求内容不一致', { idempotencyKey });
     }
-  }
 
-  // 6) 入库（事务，状态 submitted）
-  const now = nowStr();
-  const insertTs = db.prepare(
-    `INSERT INTO timesheets(user_id,dept_id,project_id,date,hours,content,status,submit_time,audit_time,auditor_id,audit_comment,created_at,updated_at)
-     VALUES (?,?,?,?,?,?, 'submitted',?,NULL,NULL,'',?,?)`,
-  );
-  const ids = await db.transaction(async () => {
-    const out = [];
+    // 2) 解析项目
+    let proj;
+    if (project.projectId) {
+      proj = await db.prepare('SELECT id,owner_id,name FROM projects WHERE id=?').get(Number(project.projectId));
+    } else {
+      proj = await db.prepare('SELECT id,owner_id,name FROM projects WHERE name=?').get(project.projectName);
+    }
+    if (!proj) throw err('PROJECT_NOT_FOUND', '项目不存在，请确认 projectId 或 projectName', { project });
+
+    // 3) 逐条解析 + 校验
+    const errors = [];
+    const parsed = [];
+    const dailyTotals = new Map(); // `${userId}|${date}` -> hours（本批内合计）
+    for (let i = 0; i < records.length; i++) {
+      const r = records[i] || {};
+      const idx = i + 1;
+
+      const employeeNo = r.employeeNo ?? body.employee?.employeeNo;
+      const username = r.username;
+      if (!employeeNo && !username) {
+        errors.push({ index: idx, field: 'employeeNo', message: '缺少 employeeNo 或 username' });
+        continue;
+      }
+      let emp;
+      if (employeeNo) {
+        emp = await db.prepare('SELECT id,name,dept_id FROM users WHERE employee_no=?').get(String(employeeNo));
+      }
+      if (!emp && username) {
+        emp = await db.prepare('SELECT id,name,dept_id FROM users WHERE username=?').get(String(username));
+      }
+      if (!emp) {
+        errors.push({ index: idx, field: 'employeeNo', message: `员工不存在：${employeeNo || username}` });
+        continue;
+      }
+
+      const date = r.date;
+      if (!isValidDateStr(date)) {
+        errors.push({ index: idx, field: 'date', message: '日期非法，应为 YYYY-MM-DD' });
+        continue;
+      }
+      if (date > serverToday()) {
+        errors.push({ index: idx, field: 'date', message: '工时日期不能晚于今天' });
+        continue;
+      }
+      const h = Number(r.hours);
+      if (!Number.isFinite(h) || h <= 0 || h > 24) {
+        errors.push({ index: idx, field: 'hours', message: '工时须为 0 < h <= 24 的数字' });
+        continue;
+      }
+      const content = (typeof r.taskDesc === 'string' && r.taskDesc.trim()) ? r.taskDesc.trim() : '(WPS 同步)';
+      parsed.push({ userId: emp.id, deptId: emp.dept_id, date, hours: h, content, name: emp.name });
+      const k = `${emp.id}|${date}`;
+      dailyTotals.set(k, (dailyTotals.get(k) || 0) + h);
+    }
+    if (errors.length) {
+      throw err('INVALID_RECORD', `有 ${errors.length} 条记录校验未通过`, { errors });
+    }
+
+    // 与网页填报使用相同用户锁；多员工批次按 ID 顺序加锁，避免交叉死锁。
+    const userIds = [...new Set(parsed.map(p => p.userId))].sort((a, b) => a - b);
+    for (const uid of userIds) {
+      await db.prepare('SELECT id FROM users WHERE id = ? FOR UPDATE').get(uid);
+    }
+    // 4) 每日合计 <= 24（含库中已有）
+    for (const [k, add] of dailyTotals) {
+      const [userId, date] = k.split('|');
+      const row = await db.prepare('SELECT COALESCE(SUM(hours),0) AS t FROM timesheets WHERE user_id=? AND date=?')
+        .get(Number(userId), date);
+      const total = (Number(row.t) || 0) + add;
+      if (total > 24 + 1e-9) {
+        const who = parsed.find((p) => String(p.userId) === userId && p.date === date)?.name || '';
+        throw err('HOURS_EXCEEDED', `员工 ${who} 在 ${date} 的工时合计将超 24 小时（含已有 ${Number(row.t) || 0}）`);
+      }
+    }
+
+    // 6) 入库（事务，状态 submitted）
+    const now = nowStr();
+    const insertTs = db.prepare(
+      `INSERT INTO timesheets(user_id,dept_id,project_id,date,hours,content,status,submit_time,audit_time,auditor_id,audit_comment,created_at,updated_at)
+       VALUES (?,?,?,?,?,?, 'submitted',?,NULL,NULL,'',?,?)`,
+    );
+    const ids = [];
     for (const p of parsed) {
       const info = await insertTs.run(p.userId, p.deptId, proj.id, p.date, p.hours, p.content, now, now, now);
-      out.push(info.lastInsertRowid);
+      ids.push(info.lastInsertRowid);
       await db.prepare('INSERT IGNORE INTO project_members(project_id,user_id) VALUES (?,?)').run(proj.id, p.userId);
     }
+    const response = {
+      code: 'OK', accepted: ids.length, timesheetIds: ids,
+      idempotencyKey: idempotencyKey || null, duplicate: false,
+      projectId: proj.id, projectName: proj.name,
+    };
     if (idempotencyKey) {
-      const resp = { code: 'OK', accepted: out.length, timesheetIds: out, idempotencyKey, duplicate: false };
       await db.prepare('INSERT INTO sync_idempotency(idem_key,key_id,body_hash,response_code,response_body,created_at) VALUES (?,?,?,?,?,?)')
-        .run(idempotencyKey, apiKey.id, bodyHash, 201, JSON.stringify(resp), now);
+        .run(idempotencyKey, apiKey.id, bodyHash, 201, JSON.stringify(response), now);
     }
-    return out;
+    return response;
   })();
-
-  return {
-    code: 'OK',
-    accepted: ids.length,
-    timesheetIds: ids,
-    idempotencyKey: idempotencyKey || null,
-    duplicate: false,
-    projectId: proj.id,
-    projectName: proj.name,
-  };
 }
 
 // ---------------- 运行日志 ----------------
