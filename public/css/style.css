@@ -50,6 +50,12 @@ button{font-family:inherit}
 .tbl tbody tr:hover{background:#fafbfd}
 .tbl td.left,.tbl th.left{text-align:left}
 .td-content{max-width:280px;overflow:hidden;text-overflow:ellipsis}
+/* 列宽拖拽手柄：贴在 th 右缘，hover 显形 */
+.tbl thead th{position:sticky} /* sticky th 本身即定位上下文，手柄相对其定位 */
+.col-grip{position:absolute;top:0;right:-5px;width:10px;height:100%;cursor:col-resize;user-select:none;z-index:5}
+.col-grip::after{content:'';position:absolute;top:15%;right:4px;width:3px;height:70%;border-radius:2px;background:transparent}
+.tbl thead th:hover .col-grip::after{background:#c3cad6}
+body.col-resizing{cursor:col-resize;user-select:none}
 .td-acts{display:flex;gap:6px;justify-content:center}
 
 /* 月度/统计矩阵表格 */

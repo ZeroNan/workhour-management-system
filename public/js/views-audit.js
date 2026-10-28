@@ -94,6 +94,8 @@ async function renderAudit(main) {
   bindFilter('au-to', f, 'to');
   bindFilter('au-status', f, 'status');
 
+  makeTableResizable(main.querySelector('.tbl'), 'audit-list');
+
   const checkedIds = () => $$('.au-row').filter(c => c.checked).map(c => Number(c.value));
   const updCount = () => {
     const cnt = $('#au-count');

@@ -350,6 +350,8 @@ async function renderAllTS(main) {
   bindFilter('al-from', f, 'from');
   bindFilter('al-to', f, 'to');
   bindFilter('al-status', f, 'status');
+
+  makeTableResizable(main.querySelector('.tbl'), 'admin-list');
 }
 
 /* ---------- 按项目统计 + Excel 导出 ---------- */

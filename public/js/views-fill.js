@@ -169,6 +169,8 @@ async function renderMyList(main) {
   bindFilter('ml-from', f, 'from');
   bindFilter('ml-to', f, 'to');
 
+  makeTableResizable(main.querySelector('.tbl'), 'fill-list');
+
   main.querySelector('.tbl-wrap')?.addEventListener('click', async e => {
     const btn = e.target.closest('[data-act]');
     if (!btn) return;
