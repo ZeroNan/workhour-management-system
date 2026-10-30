@@ -108,15 +108,50 @@ router.post('/:id/reject', requireRole('pm', 'admin'), wrap(async (req, res) => 
   res.json(serializeResult(await svc.audit(req.user, Number(req.params.id), 'reject', req.body?.comment)));
 }));
 
+/**
+ * 解析可选分页参数（limit / offset）。
+ * 语义：
+ *  - 未传（undefined / null / 空串）时 limit=0 表示「不分页」，offset=0，与历史行为完全一致；
+ *  - 传了则必须分别是 1~1000 的整数与 >=0 的整数，否则抛 VALIDATION_ERROR。
+ * 单次最多 1000 条，避免导出一类批处理把单次查询放大成全表扫描。
+ * @param {Record<string, unknown>} query Express req.query
+ * @returns {{limit: number, offset: number}}
+ */
+function parsePaging(query) {
+  const isAbsent = v => v === undefined || v === null || String(v) === '';
+  let limit = 0;
+  let offset = 0;
+  if (!isAbsent(query.limit)) {
+    const n = Number(query.limit);
+    if (!Number.isInteger(n) || n < 1 || n > 1000) {
+      throw err('VALIDATION_ERROR', 'limit 需为 1~1000 的整数');
+    }
+    limit = n;
+  }
+  if (!isAbsent(query.offset)) {
+    const n = Number(query.offset);
+    if (!Number.isInteger(n) || n < 0) {
+      throw err('VALIDATION_ERROR', 'offset 需为大于等于 0 的整数');
+    }
+    offset = n;
+  }
+  return { limit, offset };
+}
+
 // 18. 本人记录列表（自动限定本人；放最后避免与子路径冲突）
+// 支持可选分页（limit/offset），供前端导出分批拉取；不传时行为与旧版完全一致（响应仍是数组）。
 router.get('/', requireAuth, wrap(async (req, res) => {
   const { projectId, status, from, to } = req.query;
-  const conds = ['t.user_id = ?'];
+  const { limit, offset } = parsePaging(req.query);
+  const conds = ['t.user_id = ?'];   // 强制本人，绝不接受 userId 等越权参数
   const params = [req.user.id];
   if (projectId) { conds.push('t.project_id = ?'); params.push(Number(projectId)); }
   if (status) { conds.push('t.status = ?'); params.push(status); }
   if (from) { conds.push('t.date >= ?'); params.push(from); }
   if (to) { conds.push('t.date <= ?'); params.push(to); }
+  // LIMIT / OFFSET 仅以参数化（数值）方式追加，不拼接字符串
+  const paging = limit > 0 ? ' LIMIT ? OFFSET ?' : '';
+  if (limit > 0) params.push(limit, offset);
   const rows = await db.prepare(`
     SELECT t.*, u.name AS user_name, d.name AS dept_name, p.name AS project_name
     FROM timesheets t
@@ -124,8 +159,8 @@ router.get('/', requireAuth, wrap(async (req, res) => {
     LEFT JOIN departments d ON d.id = t.dept_id
     JOIN projects p ON p.id = t.project_id
     WHERE ${conds.join(' AND ')}
-    ORDER BY t.date DESC, t.id DESC`).all(...params);
-  res.json(rows.map(serialize));
+    ORDER BY t.date DESC, t.id DESC${paging}`).all(...params);
+  res.json(rows.map(serialize));   // 响应结构保持为数组
 }));
 
 // 21. 新增（放 GET / 之后无碍，POST 与 GET 路径互不冲突）

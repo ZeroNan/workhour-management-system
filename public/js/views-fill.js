@@ -108,16 +108,23 @@ async function renderFill(main) {
 /* ---------- 我的记录列表 ---------- */
 const myListFilters = { project:'', status:'', from:'', to:'' };
 
-async function renderMyList(main) {
-  const me = state.user;
-  const f = myListFilters;
-  const projects = await api.get('/api/projects/mine');
+/* 当前筛选条件 → 查询串（列表请求与导出请求共用，保证条件完全一致） */
+function myListQuery(filters) {
+  const f = filters || myListFilters;
   const qs = new URLSearchParams();
   if (f.project) qs.set('projectId', f.project);
   if (f.status) qs.set('status', f.status);
   if (f.from) qs.set('from', f.from);
   if (f.to) qs.set('to', f.to);
-  const list = await api.get('/api/timesheets' + (qs.toString() ? '?' + qs : ''));
+  return qs.toString();
+}
+
+async function renderMyList(main) {
+  const me = state.user;
+  const f = myListFilters;
+  const projects = await api.get('/api/projects/mine');
+  const qs = myListQuery(f);
+  const list = await api.get('/api/timesheets' + (qs ? '?' + qs : ''));
 
   const statusOpts = ['<option value="">全部状态</option>']
     .concat(Object.keys(STATUS).map(k => opt(k, STATUS[k].label, f.status))).join('');
@@ -153,6 +160,11 @@ async function renderMyList(main) {
         <div class="filter"><label>状态</label><select id="ml-status">${statusOpts}</select></div>
         <div class="filter"><label>日期从</label><input type="date" id="ml-from" value="${f.from}"></div>
         <div class="filter"><label>至</label><input type="date" id="ml-to" value="${f.to}"></div>
+        <div class="filter filter-export">
+          <button class="btn" id="ml-export-csv">导出 CSV</button>
+          <button class="btn" id="ml-export-xlsx">导出 Excel</button>
+          <span class="hint" id="ml-export-status"></span>
+        </div>
       </div>
       ${list.length ? `
       <div class="tbl-wrap"><table class="tbl">
@@ -168,6 +180,21 @@ async function renderMyList(main) {
   bindFilter('ml-status', f, 'status');
   bindFilter('ml-from', f, 'from');
   bindFilter('ml-to', f, 'to');
+
+  /* 导出控件：仅在列表非空时可用；导出条件是当前筛选条件（与列表请求同一份 qs） */
+  const listEmpty = list.length === 0;
+  const csvBtn  = $('#ml-export-csv');
+  const xlsxBtn = $('#ml-export-xlsx');
+  if (csvBtn)  csvBtn.disabled  = listEmpty;
+  if (xlsxBtn) xlsxBtn.disabled = listEmpty;
+  const onExport = format => {
+    if (listEmpty) { toast('当前筛选条件下无记录', 'info'); return; }
+    exportMyList(format);
+  };
+  if (csvBtn)  csvBtn.onclick  = () => onExport('csv');
+  if (xlsxBtn) xlsxBtn.onclick = () => onExport('xlsx');
+  const exportStatusEl = $('#ml-export-status');
+  if (exportStatusEl) exportStatusEl.textContent = listEmpty ? '无记录可导出' : '';
 
   makeTableResizable(main.querySelector('.tbl'), 'fill-list');
 
@@ -211,6 +238,128 @@ async function renderMyList(main) {
       renderView();
     }
   });
+}
+
+/* ---------- 记录导出（CSV / Excel）----------
+ * 数据来源：GET /api/timesheets 分批拉取（limit=500），筛选条件与列表请求一致。
+ * 文件生成：优先本地 vendor SheetJS（index.html 已加载），不可用时自动降级 CSV。
+ * 说明：api.get 只能拿 JSON，因此导出统一走「JSON 数据 + 前端生成文件」。
+ */
+const EXPORT_PAGE_SIZE = 500;    // 每批条数（后端 limit 上限 1000，取 500 更平稳）
+const EXPORT_MAX_BATCHES = 100;  // 最多 100 批 = 5 万条；第 100 批仍满批时无法确认后面是否还有数据，按超限中止（可完整导出的上限为 49999 条）
+const EXPORT_HEADER = ['日期', '项目', '工时(h)', '工作内容', '状态', '退回意见'];
+const EXPORT_COL_WIDTHS = [{ wch: 12 }, { wch: 24 }, { wch: 9 }, { wch: 60 }, { wch: 10 }, { wch: 32 }];
+
+/* 单条记录 → 导出行（与列表可见列一致，「操作」列不导出） */
+function myListExportRow(t) {
+  return [
+    t.date == null ? '' : t.date,
+    t.projectName == null ? '' : t.projectName,
+    fmtH(Number(t.hours) || 0),
+    t.content == null ? '' : t.content,                                   // 工作内容不截断
+    (STATUS[t.status] && STATUS[t.status].label) || t.status || '',
+    t.auditComment || '',
+  ];
+}
+
+/* 单元格以这些字符开头时，Excel/WPS 打开 CSV 会当成公式执行（OWASP CSV 注入） */
+const CSV_INJECT_PREFIX = /^[=+\-@\t\r]/;
+
+/* 二维数组 → CSV 文本：每格双引号包裹并转义内部双引号，\r\n 换行。
+ * CSV 注入防护：字符串以 = + - @ 或制表符/回车开头时，前置一个单引号，
+ * 表格软件即按文本处理（该单引号不显示在单元格里）；数值与其他内容不受影响。 */
+function toCsvText(matrix) {
+  return matrix
+    .map(row => row.map(cell => {
+      const raw = cell == null ? '' : String(cell);
+      const text = typeof cell === 'string' && CSV_INJECT_PREFIX.test(raw) ? "'" + raw : raw;
+      return `"${text.replace(/"/g, '""')}"`;
+    }).join(','))
+    .join('\r\n');
+}
+
+/* 触发浏览器下载 CSV（BOM 头保证 Excel 正确识别中文） */
+function downloadCsvFile(csvText, filename) {
+  const blob = new Blob(['\uFEFF' + csvText], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(a.href);
+}
+
+/**
+ * 按当前筛选条件导出我的工时记录。
+ * @param {'csv'|'xlsx'} format 目标格式；xlsx 时若 SheetJS 不可用则降级 CSV
+ * @returns {Promise<void>}
+ */
+async function exportMyList(format) {
+  const csvBtn    = $('#ml-export-csv');
+  const xlsxBtn   = $('#ml-export-xlsx');
+  const statusEl  = $('#ml-export-status');
+  const setBusy = busy => {
+    if (csvBtn)  { csvBtn.disabled  = busy; csvBtn.textContent  = busy ? '导出中…' : '导出 CSV'; }
+    if (xlsxBtn) { xlsxBtn.disabled = busy; xlsxBtn.textContent = busy ? '导出中…' : '导出 Excel'; }
+  };
+  const setStatus = msg => { if (statusEl) statusEl.textContent = msg; };
+  const base = myListQuery(myListFilters);
+
+  setBusy(true);
+  setStatus('正在获取数据…');
+  const rows = [];
+  try {
+    let batch = 0;
+    for (;;) {
+      const offset = batch * EXPORT_PAGE_SIZE;
+      const qs = `${base ? base + '&' : ''}limit=${EXPORT_PAGE_SIZE}&offset=${offset}`;
+      const page = await api.get('/api/timesheets?' + qs);
+      if (!Array.isArray(page)) throw new Error('导出失败：服务端返回数据格式异常');
+      rows.push(...page);
+      batch += 1;
+      setStatus(`正在获取数据… 已获取 ${rows.length} 条`);
+      if (page.length < EXPORT_PAGE_SIZE) break;   // 不足一批说明已取完，正常结束
+      // 仍满批时才判断是否到上限：满批意味着后面可能还有数据，宁可提示缩小范围也不静默截断
+      if (batch >= EXPORT_MAX_BATCHES) throw new Error('数据量过大，请缩小日期范围后重试');
+    }
+
+    if (!rows.length) {
+      setStatus('当前筛选条件下无记录');
+      toast('当前筛选条件下无记录', 'info');
+      return;
+    }
+
+    const matrix = [EXPORT_HEADER].concat(rows.map(myListExportRow));
+    const filenameBase = `工时记录_${todayStr()}`;
+    const isXlsx = format === 'xlsx';
+
+    if (isXlsx && typeof XLSX !== 'undefined') {
+      try {
+        const ws = XLSX.utils.aoa_to_sheet(matrix);
+        ws['!cols'] = EXPORT_COL_WIDTHS;
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, '工时记录');
+        XLSX.writeFile(wb, `${filenameBase}.xlsx`);
+        setStatus(`已导出 ${rows.length} 条`);
+        toast(`已导出 ${rows.length} 条记录（Excel）`);
+        return;
+      } catch (e2) { /* SheetJS 写文件失败 → 继续走下方 CSV 降级 */ }
+    }
+
+    downloadCsvFile(toCsvText(matrix), `${filenameBase}.csv`);
+    setStatus(`已导出 ${rows.length} 条`);
+    if (isXlsx) {
+      toast(`Excel 组件不可用，已降级导出 CSV：${filenameBase}.csv（共 ${rows.length} 条）`, 'info');
+    } else {
+      toast(`已导出 ${rows.length} 条记录（CSV）`);
+    }
+  } catch (e) {
+    setStatus('导出失败');
+    toast(e.message || '导出失败', 'error');
+  } finally {
+    setBusy(false);   // 无论成败都恢复按钮可用态
+  }
 }
 
 /* 单条工时记录编辑弹窗（列表页「编辑」入口） */
