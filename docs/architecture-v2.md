@@ -278,7 +278,7 @@ scrypt$<N>$<r>$<p>$<saltHex>$<hashHex>
 
 | # | 方法 | 路径 | 入参 | 出参(200) | 权限 | 错误码 |
 |---|---|---|---|---|---|---|
-| 18 | GET | /api/timesheets | `?projectId&status&from&to&limit&offset` | 本人记录 `[{id,projectId,projectName,date,hours,content,status,submitTime,auditTime,auditComment}]`，按日期倒序；**分页关闭时返回裸数组** | 已登录（自动限定本人） | 401；400 VALIDATION_ERROR（`limit` 非 1~1000 整数 / `offset` 非 ≥0 整数） |
+| 18 | GET | /api/timesheets | `?projectId&status&from&to&limit&offset` | 本人记录 `[{id,projectId,projectName,date,hours,content,status,submitTime,auditTime,auditComment}]`，按日期倒序；**响应始终为裸数组（分页开启亦不包 envelope）** | 已登录（自动限定本人） | 401；400 VALIDATION_ERROR（`limit` 非 1~1000 整数 / `offset` 非 ≥0 整数） |
 | 19 | GET | /api/timesheets/all | `?deptId&projectId&userId&from&to&status` | 全量记录（含 userName、deptName） | admin | 401/403 |
 | 20 | GET | /api/timesheets/day-summary | `?date=YYYY-MM-DD` | `{date, total, editable, future}`；editable=当日无记录或有任一非 approved 记录 | 已登录 | 401 |
 | 21 | POST | /api/timesheets | `{projectId, date, hours, content, submit?:bool}` | 201 `{record, dayTotal}`；submit=true 时直接落为 submitted | 已登录且为项目成员 | 401；403 NOT_MEMBER；**400 FUTURE_DATE（date > 服务器今天）**；400 VALIDATION_ERROR（hours≤0 或 >24、content 空、日期格式非法）；400 HOURS_EXCEEDED（当日合计 >24）；409 DAY_NOT_EDITABLE（当日已全部通过不可新增） |
@@ -310,7 +310,25 @@ scrypt$<N>$<r>$<p>$<saltHex>$<hashHex>
 | 30 | GET | /api/stats/project | `?projectId&month=YYYY-MM&scope=all\|approved` | `{month, today, memberRows:[{userId,name,dept,cells:[],sum}], totals:[], grand, anomalies:[未来日期脏记录]}`。**矩阵计算排除 date>today 的记录**（P0-4②：不参与合计/导出），anomalies 单列供置灰展示 | admin | 401/403；400 VALIDATION_ERROR |
 | 31 | GET | /api/export/project.xlsx | 同 30 | xlsx 文件流（`Content-Disposition: attachment; filename*=UTF-8''工时统计_2026-09.xlsx`，同源 statsService，复用 30 的查询） | admin | 同 30（**P1-1，后置任务 T20**） |
 
-### 3.2 日期校验的服务端落位（P0-3）
+### 3.2 工时记录导出实现（前端分批导出）
+
+「工时记录列表」页的导出为**纯前端实现**：`api.get()` 只做 JSON 请求，故选「JSON 数据 + 前端生成文件」，不新增后端接口。
+
+| 项 | 实现 |
+|---|---|
+| 入口 | `public/js/views-fill.js` 的 `renderMyList()`：筛选行右侧 `#ml-export-csv` / `#ml-export-xlsx` 两个按钮 + `#ml-export-status`（`.hint`）状态位；列表为空时按钮 `disabled`、状态位显示「无记录可导出」，点击兜底提示「当前筛选条件下无记录」 |
+| 筛选一致性 | 列表请求与导出共用 `myListQuery(filters)` 生成查询串，导出条件恒等于当前筛选条件 |
+| 分批拉取 | `EXPORT_PAGE_SIZE = 500`、`EXPORT_MAX_BATCHES = 100`：每批 `GET /api/timesheets?...&limit=500&offset=N`，返回不足 500 条即止；**第 100 批仍为满批**时无法确认后面还有无数据，按超限中止（提示「数据量过大，请缩小日期范围后重试」，且不生成任何文件）。故完整可导出上限为 **49999 条**——宁可提示缩小范围也不静默截断 |
+| 字段范围 | `myListExportRow()` 输出 6 列：日期、项目、工时(h)、工作内容、状态、退回意见；不含「操作」列，工作内容不截断；工时经 `Number(fmtH(hours))` 输出为数值（xlsx 为数值单元格，可直接 SUM/透视）；状态取 `STATUS[status].label`，未知状态原样输出 |
+| CSV | `toCsvText()`：`\uFEFF` BOM + 每格双引号包裹并翻倍内部双引号 + CRLF 换行，`text/csv;charset=utf-8` |
+| CSV 注入中和 | 单元格为字符串且匹配 `CSV_INJECT_PREFIX = /^[=+\-@\t\r]/` 时前置单引号（OWASP CSV Injection；仅字符串生效，数值与日期不误伤） |
+| Excel | 本地 vendor `public/vendor/xlsx.full.min.js`（`index.html` 已加载）：`aoa_to_sheet` → `!cols` 列宽 `[12, 24, 9, 60, 10, 32]`（工作内容 60 字符）→ `XLSX.writeFile` |
+| 降级 | `typeof XLSX === 'undefined'` 或写文件抛错时自动改走 CSV，并以 info 级 toast 说明已降级 |
+| 文件名 | `工时记录_<state.today>.csv` / `.xlsx`（日期取服务端基准 `todayStr()`，不用本地时钟） |
+| 反馈 | 导出中两按钮禁用且文案「导出中…」；状态位「正在获取数据… 已获取 N 条」→「已导出 N 条」；失败显示「导出失败」并 toast 错误 |
+| 权限 | 复用 `requireAuth` + 后端恒定 `t.user_id = ?`，导出只能拿到本人记录，不接受 `userId` 类越权参数 |
+
+### 3.3 日期校验的服务端落位（P0-3）
 
 **唯一事实源**：`src/utils/date.js` 的 `serverToday()`，依赖启动时固定的 `TZ=Asia/Shanghai`，返回 `'YYYY-MM-DD'`。落位三处：
 
