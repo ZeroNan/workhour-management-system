@@ -255,7 +255,7 @@ function myListExportRow(t) {
   return [
     t.date == null ? '' : t.date,
     t.projectName == null ? '' : t.projectName,
-    fmtH(Number(t.hours) || 0),
+    Number(fmtH(Number(t.hours) || 0)),   // 数值类型：Excel 中可直接 SUM/透视
     t.content == null ? '' : t.content,                                   // 工作内容不截断
     (STATUS[t.status] && STATUS[t.status].label) || t.status || '',
     t.auditComment || '',
@@ -266,8 +266,10 @@ function myListExportRow(t) {
 const CSV_INJECT_PREFIX = /^[=+\-@\t\r]/;
 
 /* 二维数组 → CSV 文本：每格双引号包裹并转义内部双引号，\r\n 换行。
+ * 说明：工时为 number 类型，经 String() 后仍加引号输出（Excel/主流解析器对 "7.5" 按数字识别）；
+ * 在 xlsx 路径中该 number 会写入数值单元格（type 'n'），可直接 SUM。
  * CSV 注入防护：字符串以 = + - @ 或制表符/回车开头时，前置一个单引号，
- * 表格软件即按文本处理（该单引号不显示在单元格里）；数值与其他内容不受影响。 */
+ * 表格软件即按文本处理（该单引号不显示在单元格里）；数值不受影响。 */
 function toCsvText(matrix) {
   return matrix
     .map(row => row.map(cell => {
