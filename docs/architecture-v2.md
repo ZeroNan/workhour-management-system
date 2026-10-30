@@ -278,13 +278,15 @@ scrypt$<N>$<r>$<p>$<saltHex>$<hashHex>
 
 | # | 方法 | 路径 | 入参 | 出参(200) | 权限 | 错误码 |
 |---|---|---|---|---|---|---|
-| 18 | GET | /api/timesheets | `?projectId&status&from&to` | 本人记录 `[{id,projectId,projectName,date,hours,content,status,submitTime,auditTime,auditComment}]`，按日期倒序 | 已登录（自动限定本人） | 401 |
+| 18 | GET | /api/timesheets | `?projectId&status&from&to&limit&offset` | 本人记录 `[{id,projectId,projectName,date,hours,content,status,submitTime,auditTime,auditComment}]`，按日期倒序；**分页关闭时返回裸数组** | 已登录（自动限定本人） | 401；400 VALIDATION_ERROR（`limit` 非 1~1000 整数 / `offset` 非 ≥0 整数） |
 | 19 | GET | /api/timesheets/all | `?deptId&projectId&userId&from&to&status` | 全量记录（含 userName、deptName） | admin | 401/403 |
 | 20 | GET | /api/timesheets/day-summary | `?date=YYYY-MM-DD` | `{date, total, editable, future}`；editable=当日无记录或有任一非 approved 记录 | 已登录 | 401 |
 | 21 | POST | /api/timesheets | `{projectId, date, hours, content, submit?:bool}` | 201 `{record, dayTotal}`；submit=true 时直接落为 submitted | 已登录且为项目成员 | 401；403 NOT_MEMBER；**400 FUTURE_DATE（date > 服务器今天）**；400 VALIDATION_ERROR（hours≤0 或 >24、content 空、日期格式非法）；400 HOURS_EXCEEDED（当日合计 >24）；409 DAY_NOT_EDITABLE（当日已全部通过不可新增） |
 | 22 | PUT | /api/timesheets/:id | 同 21 | `{record, dayTotal}` | 本人（admin 不可代改，保持责任边界） | 404；**409 STATE_CONFLICT（status ∉ {draft, rejected}，如已被审核/他人并发修改）**；其余同 21 |
 | 23 | DELETE | /api/timesheets/:id | — | 204 | 本人 | 404；409 STATE_CONFLICT（仅 draft/rejected 可删） |
 | 24 | POST | /api/timesheets/:id/submit | — | `{record}`；幂等：已 submitted → 200 直接返回 | 本人 | 404；409 STATE_CONFLICT（approved 状态） |
+
+> **分页（18 号接口，可选）**：`limit` 须为 1~1000 的整数、`offset` 须为 ≥0 的整数，非法值（0、>1000、小数、非数字、负数）返回 400 `VALIDATION_ERROR`。**不传即不分页**，行为与旧版完全一致（响应始终为裸数组，不包 envelope）；仅当 `limit > 0` 时以参数化占位符追加 ` LIMIT ? OFFSET ?`。权限不变：`requireAuth` 且 SQL 恒定 `t.user_id = ?` 强制本人，不接受 `userId` 等越权参数。前端「工时记录列表」导出按每批 500 条调用该接口分批拉取。
 
 #### 月度视图
 

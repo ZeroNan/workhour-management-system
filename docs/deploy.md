@@ -164,6 +164,8 @@ bash scripts/smoke.sh
 
 升级已有部署的代码后，如该版本变更了表结构，**必须先执行对应迁移脚本、再启动新版本服务**，否则相关接口会直接报错。
 
+> ✅ **本轮变更（工时列表列宽拖拽 + 记录导出 CSV/Excel）无数据库迁移要求**：改动仅涉及前端静态资源（`public/js/views-fill.js`、`public/js/util.js`、`public/css/style.css`）与 `GET /api/timesheets` 的可选查询参数 `limit` / `offset`（纯查询层，**未改表结构**）。升级时替换代码并重启服务即可，**无需执行任何迁移脚本**。下表的迁移清单仅适用于「WPS 集成」与「人员排序（`users.sort_order`）」版本升级。
+
 | 迁移脚本 | 适用版本 | 作用 | 不执行的后果 |
 |---|---|---|---|
 | `scripts/migrate-integration.sql` | WPS 集成功能上线前（一次性） | `users` 加 `employee_no`；建 `api_keys` / `sync_idempotency` / `sync_log` | WPS 同步与集成管理接口不可用 |
