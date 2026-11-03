@@ -139,6 +139,7 @@ test('moving to another project and auditing cannot approve with stale project p
 test('statistics retain former members, sort by maintained order and reconcile totals', async () => {
   const db = { prepare: sql => ({ get: async () => ({ name: '项目', owner_id: 2 }), all: async () => {
     if (sql.includes('date >')) return [];
+    if (sql.includes('DISTINCT owner_id')) return [{ owner_id: 2 }]; // 负责人并集（全路径口径，见 statsService）
     if (sql.includes('SELECT t.user_id')) return [{ user_id: 4, date: payload.date, hours: 7 }];
     if (sql.includes('DISTINCT user_id')) return [{ user_id: 2 }, { user_id: 5 }];
     if (sql.includes('SELECT u.id')) return [{ id: 2, name: '负责人', sort_order: 20 }, { id: 4, name: '历史成员', sort_order: 10 }, { id: 5, name: '成员', sort_order: 10 }];

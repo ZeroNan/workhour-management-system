@@ -58,13 +58,12 @@ export async function projectStats(projectId, month, scope, accessibleProjectIds
 
   const placeholders = pids.map(() => '?').join(',');
 
-  // 所选项目的负责人并集：多选路径不查单项目 owner（projectId=null），需在此补齐，
-  // 保证「负责人无工时、又不在 project_members」时仍出现在成员行，与单项目口径一致
-  const ownerIds = multi
-    ? [...new Set((await db.prepare(
-      `SELECT DISTINCT owner_id FROM projects WHERE id IN (${placeholders}) AND owner_id IS NOT NULL`).all(...pids)
-    ).map(r => Number(r.owner_id)).filter(id => Number.isInteger(id)))]
-    : [];
+  // 项目负责人并集（全路径统一口径）：统计范围（单项目 / projectIds 子集 / 全部可见项目）内
+  // projects.owner_id 的并集。负责人即便无工时、又不在 project_members，也必须出现在成员行，
+  // 否则「只勾某项目显示其负责人、勾全部项目负责人反而消失」这类反直觉行为会出现。
+  const ownerIds = [...new Set((await db.prepare(
+    `SELECT DISTINCT owner_id FROM projects WHERE id IN (${placeholders}) AND owner_id IS NOT NULL`).all(...pids)
+  ).map(r => Number(r.owner_id)).filter(id => Number.isInteger(id)))];
 
   // 未来日期记录 → anomalies（不参与合计/导出）
   const anomalies = await db.prepare(`
@@ -80,26 +79,28 @@ export async function projectStats(projectId, month, scope, accessibleProjectIds
     WHERE t.project_id IN (${placeholders}) AND t.date LIKE ? AND t.date <= ? ${statusCond}
   `).all(...pids, `${month}-%`, today);
 
-  // 成员行 = 所选项目成员并集 ∪ 所选项目负责人 ∪ 有工时记录的人
+  // 成员行 = 统计范围内「项目成员 ∪ 项目负责人 ∪ 有工时记录的人」（与路径/是否多选无关）
+  // 所有 user id 统一转 number 后再入数组，避免成员下标与 users/byUser 的键类型错位
   const memberIds = [];
   (await db.prepare(`SELECT DISTINCT user_id FROM project_members WHERE project_id IN (${placeholders})`)
-    .all(...pids)).forEach(r => { if (!memberIds.includes(r.user_id)) memberIds.push(r.user_id); });
-  if (projectId != null && ownerId != null && !memberIds.includes(ownerId)) memberIds.push(ownerId);
+    .all(...pids)).forEach(r => { const uid = Number(r.user_id); if (!memberIds.includes(uid)) memberIds.push(uid); });
+  if (projectId != null && ownerId != null && !memberIds.includes(Number(ownerId))) memberIds.push(Number(ownerId));
   ownerIds.forEach(id => { if (id != null && !memberIds.includes(id)) memberIds.push(id); });
 
-  rows.forEach(r => { if (!memberIds.includes(r.user_id)) memberIds.push(r.user_id); });
+  rows.forEach(r => { const uid = Number(r.user_id); if (!memberIds.includes(uid)) memberIds.push(uid); });
 
   const users = {};
   if (memberIds.length) {
     (await db.prepare(`SELECT u.id, u.name, u.sort_order, d.name AS dept FROM users u
       LEFT JOIN departments d ON d.id = u.dept_id WHERE u.id IN (${memberIds.map(() => '?').join(',')})`)
-      .all(...memberIds)).forEach(u => { users[u.id] = u; });
+      .all(...memberIds)).forEach(u => { users[Number(u.id)] = u; });
   }
 
-  const byUser = {}; // uid -> {date -> hours}
+  const byUser = {}; // uid(number) -> {date -> hours}
   const byDate = {}; // date -> hours
   rows.forEach(r => {
-    (byUser[r.user_id] ||= {})[r.date] = (byUser[r.user_id]?.[r.date] || 0) + r.hours;
+    const uid = Number(r.user_id); // 与 memberIds 的 number 口径对齐（对象键同为字符串，纯归一化、零行为变化）
+    (byUser[uid] ||= {})[r.date] = (byUser[uid]?.[r.date] || 0) + r.hours;
     byDate[r.date] = (byDate[r.date] || 0) + r.hours;
   });
 
