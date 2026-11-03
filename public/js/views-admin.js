@@ -403,31 +403,37 @@ async function renderStats(main) {
   main.innerHTML = `
     <div class="page-head">
       <h2>按项目统计</h2>
-      <div class="page-tools">
-        <div class="proj-pick">
-          <select id="st-proj" multiple size="4" title="可多选项目（按住 Ctrl / ⌘ 点选多项）">${projects.map(p => `<option value="${esc(p.id)}"${f.projects.includes(p.id) ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
-          <div class="proj-pick-act">
-            <button class="btn btn-sm" id="st-proj-all" type="button">全选</button>
-            <button class="btn btn-sm" id="st-proj-clear" type="button">清空</button>
-            <span class="hint">未选择或全选时按全部可见项目汇总</span>
-          </div>
-        </div>
-        <input type="month" id="st-month" value="${ym}">
-        <select id="st-scope">
-          ${opt('all', '统计口径：全部状态', f.scope)}
-          ${opt('approved', '统计口径：仅已通过', f.scope)}
-        </select>
-        <button class="btn btn-primary" id="st-export">导出 Excel</button>
-      </div>
+      <span class="muted">${ym} · ${projects.length} 个项目 · ${sd.memberRows.length} 人</span>
     </div>
     <div class="card">
+      <div class="filters">
+        <div class="filter filter-wide">
+          <label>项目</label>
+          <div class="member-checks" id="st-projs">
+            <label class="mcheck"><input type="checkbox" id="st-proj-all"${f.projects.length ? '' : ' checked'}> 全部项目</label>
+            ${projects.map(p => `<label class="mcheck"><input type="checkbox" value="${esc(p.id)}"${f.projects.includes(p.id) ? ' checked' : ''}> ${esc(p.name)}</label>`).join('')}
+          </div>
+        </div>
+        <div class="filter"><label>月份</label><input type="month" id="st-month" value="${ym}"></div>
+        <div class="filter"><label>统计口径</label>
+          <select id="st-scope">
+            ${opt('all', '统计口径：全部状态', f.scope)}
+            ${opt('approved', '统计口径：仅已通过', f.scope)}
+          </select></div>
+        <div class="filter filter-export">
+          <span class="hint" id="st-dirty"></span>
+          <button class="btn btn-sm" id="st-reset" type="button">重置</button>
+          <button class="btn" id="st-export" type="button">导出 Excel</button>
+          <button class="btn btn-primary" id="st-query" type="button">查询</button>
+        </div>
+      </div>
       <div class="tbl-wrap"><table class="tbl monthly">
         <thead><tr><th class="pcell">姓名 / 部门</th>${head}<th class="c-sum">合计</th></tr></thead>
         <tbody>${bodyRows}${totalRow}</tbody>
       </table></div>
       <div class="legend">
         <span>行 = 所选项目成员与负责人并集（含有工时记录的人）；列 = 该月每一天，末行为全员合计；浅灰表头为周末；蓝框为今天；统计列截止今天（今天之后的列不含数据）</span>
-        <span>多选项目时按所选项目汇总（未选择或全选 = 全部可见项目）；导出结果不区分具体项目</span>
+        <span>勾选「全部项目」或全部项目均勾选 = 全部可见项目汇总；导出结果不区分具体项目</span>
       </div>
       ${sd.anomalies.length ? `
       <div class="anomaly-box">
@@ -436,18 +442,61 @@ async function renderStats(main) {
       </div>` : ''}
     </div>`;
 
-  /* 多选控件：bindFilter 只适用于单值控件，此处自行绑定 */
-  const projSel = $('#st-proj');
-  projSel.addEventListener('change', () => {
-    f.projects = Array.from(projSel.selectedOptions).map(o => Number(o.value));
-    renderView();
-  });
-  $('#st-proj-all').onclick = () => { f.projects = projects.map(p => p.id); renderView(); };
-  $('#st-proj-clear').onclick = () => { f.projects = []; renderView(); };
-  bindFilter('st-scope', f, 'scope');
+  /* 筛选：草稿 + 显式提交（复选需多次点选，避免每改一项就整页重渲染） */
+  const projBox = $('#st-projs');
+  const allBox = $('#st-proj-all');
+  const projBoxes = Array.from(projBox.querySelectorAll('input[type="checkbox"]')).filter(c => c !== allBox);
   const mi = $('#st-month');
-  mi.addEventListener('change', () => { f.month = mi.value || curYM(); renderView(); });
-  $('#st-export').onclick = () => exportStats(sd, days, ym);
+  const sc = $('#st-scope');
+  const dirtyTip = $('#st-dirty');
+
+  const readDraft = () => ({
+    projects: allBox.checked ? [] : projBoxes.filter(c => c.checked).map(c => Number(c.value)),
+    month: mi.value || curYM(),
+    scope: sc.value
+  });
+  /* 勾满全部具体项目与「全部项目」等价：后端都会省略 projectIds */
+  const draftKey = d => {
+    const ids = d.projects.map(Number).sort((a, b) => a - b);
+    return [(ids.length === projects.length ? '' : ids.join(',')), d.month, d.scope].join('|');
+  };
+  const appliedKey = () => draftKey({ projects: f.projects, month: ym, scope: f.scope });
+  const markDirty = () => {
+    dirtyTip.textContent = draftKey(readDraft()) === appliedKey() ? '' : '有未应用的修改';
+  };
+
+  allBox.addEventListener('change', () => {
+    if (allBox.checked) projBoxes.forEach(c => { c.checked = false; });
+    else if (!projBoxes.some(c => c.checked)) allBox.checked = true; /* 不存在"一个都不选"：回到全部项目 */
+    markDirty();
+  });
+  projBoxes.forEach(c => c.addEventListener('change', () => {
+    if (c.checked) allBox.checked = false;
+    else if (!projBoxes.some(x => x.checked)) allBox.checked = true; /* 取消最后一个具体项目 → 回到全部项目 */
+    markDirty();
+  }));
+  [mi, sc].forEach(el => {
+    el.addEventListener('change', markDirty);
+    el.addEventListener('keydown', e => { if (e.key === 'Enter') $('#st-query').click(); });
+  });
+
+  /* 查询：应用草稿；重置：恢复默认并立即生效 */
+  $('#st-query').onclick = () => {
+    const d = readDraft();
+    f.projects = d.projects;
+    f.month = d.month;
+    f.scope = d.scope;
+    renderView();
+  };
+  $('#st-reset').onclick = () => {
+    f.projects = []; f.month = ''; f.scope = 'all';
+    renderView();
+  };
+  $('#st-export').onclick = () => {
+    /* 导出用当前表格数据（已应用筛选），未点查询的修改不生效 */
+    if (dirtyTip.textContent) toast('导出基于当前表格（已应用筛选），未应用的修改不会生效', 'info');
+    exportStats(sd, days, ym);
+  };
 }
 
 /* 导出：本地 vendor SheetJS（数据来自统计 API 同源）；SheetJS 不可用时降级 CSV（BOM 头） */
