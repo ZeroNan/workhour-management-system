@@ -42,7 +42,10 @@ router.post('/', requireRole('admin'), wrap(async (req, res) => {
   const { name, ownerId, memberIds } = req.body || {};
   const n = String(name || '').trim();
   if (!n) throw err('VALIDATION_ERROR', '项目名称不能为空');
-  if (!Number.isInteger(Number(ownerId))) throw err('VALIDATION_ERROR', '请选择项目负责人');
+  // 负责人 id 必须为正整数：NaN（'abc'/undefined）、0（null/''）均在此拦下，避免 NaN 拼入 SQL
+  if (!Number.isInteger(Number(ownerId)) || Number(ownerId) <= 0) {
+    throw err('VALIDATION_ERROR', '请选择项目负责人');
+  }
   if (await db.prepare('SELECT 1 AS x FROM projects WHERE name = ?').get(n)) {
     throw err('DUPLICATE_NAME', '该项目名称已存在');
   }
@@ -71,11 +74,18 @@ router.post('/', requireRole('admin'), wrap(async (req, res) => {
 // 12. 编辑
 router.put('/:id', requireRole('admin'), wrap(async (req, res) => {
   const id = Number(req.params.id);
+  // 路径 id 必须为正整数，避免 NaN 拼入 SQL（WHERE id = NaN）触发 1054 变 500
+  if (!Number.isInteger(id) || id <= 0) throw err('VALIDATION_ERROR', '项目 id 非法');
   const p = await db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
   if (!p) throw err('NOT_FOUND', '项目不存在');
   const { name, ownerId, memberIds } = req.body || {};
   const n = String(name || '').trim();
   if (!n) throw err('VALIDATION_ERROR', '项目名称不能为空');
+  // 负责人非法值（'abc' / undefined / 3.5 / null / '' / 0 / -1）必须在此拦下：
+  // 否则 NaN 会拼进 SQL（WHERE id = NaN）触发 MySQL 1054，被判为非 ApiError 返回 500。
+  if (!Number.isInteger(Number(ownerId)) || Number(ownerId) <= 0) {
+    throw err('VALIDATION_ERROR', '请选择项目负责人');
+  }
   if (await db.prepare('SELECT 1 AS x FROM projects WHERE name = ? AND id != ?').get(n, id)) {
     throw err('DUPLICATE_NAME', '该项目名称已存在');
   }
@@ -104,6 +114,8 @@ router.put('/:id', requireRole('admin'), wrap(async (req, res) => {
 // 13. 删除（存在关联工时则 409）
 router.delete('/:id', requireRole('admin'), wrap(async (req, res) => {
   const id = Number(req.params.id);
+  // 路径 id 必须为正整数：'abc'/3.5/0/-1/'' 一律 400，避免 NaN 拼入 SQL 触发 1054 变 500
+  if (!Number.isInteger(id) || id <= 0) throw err('VALIDATION_ERROR', '项目 id 非法');
   const p = await db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
   if (!p) throw err('NOT_FOUND', '项目不存在');
   if (await db.prepare('SELECT 1 AS x FROM timesheets WHERE project_id = ?').get(id)) {
