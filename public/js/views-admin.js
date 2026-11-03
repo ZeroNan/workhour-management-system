@@ -355,7 +355,8 @@ async function renderAllTS(main) {
 }
 
 /* ---------- 按项目统计 + Excel 导出 ---------- */
-const statsState = { project:'', month:'', scope:'all' };
+/* projects: 选中的项目 id 数组；空数组 = 全部可见项目（聚合） */
+const statsState = { projects: [], month: '', scope: 'all' };
 
 async function renderStats(main) {
   const me = state.user;
@@ -364,10 +365,20 @@ async function renderStats(main) {
   const projects = me.role === 'admin' ? allProjects : allProjects.filter(p => p.ownerId === me.id);
   if (!projects.length) { main.innerHTML = empty(me.role === 'admin' ? '暂无项目数据，请先在「基础数据管理」中添加项目' : '您当前没有负责的项目'); return; }
   const f = statsState;
-  /* 默认：全部项目（聚合）；仅当保存的值仍可见时保留 */
-  if (!f.project || !projects.some(p => p.id === Number(f.project))) f.project = '';
+  /* 兼容旧的单值 project：迁移进数组后删除 */
+  if (f.project != null && f.project !== '') {
+    const legacy = Number(f.project);
+    if (Number.isInteger(legacy) && legacy > 0) f.projects = [legacy];
+    delete f.project;
+  }
+  if (!Array.isArray(f.projects)) f.projects = [];
+  /* 仅保留仍可见的项目；空数组 = 全部可见项目（与全选等价） */
+  f.projects = f.projects.map(Number).filter(id => projects.some(p => p.id === id));
   const ym = f.month || curYM();
-  const sd = await api.get(`/api/stats/project?projectId=${f.project}&month=${ym}&scope=${f.scope}`);
+  /* 未选择或全选 → 省略 projectIds，由后端按全部可见项目聚合 */
+  const subset = f.projects.length > 0 && f.projects.length < projects.length;
+  const projParam = subset ? `&projectIds=${f.projects.join(',')}` : '';
+  const sd = await api.get(`/api/stats/project?month=${ym}&scope=${f.scope}${projParam}`);
 
   const days = [];
   for (let d = 1; d <= daysInMonth(ym); d++) days.push(`${ym}-${pad(d)}`);
@@ -393,7 +404,14 @@ async function renderStats(main) {
     <div class="page-head">
       <h2>按项目统计</h2>
       <div class="page-tools">
-        <select id="st-proj"><option value="">全部项目</option>${projects.map(p => opt(p.id, p.name, f.project)).join('')}</select>
+        <div class="proj-pick">
+          <select id="st-proj" multiple size="4" title="可多选项目（按住 Ctrl / ⌘ 点选多项）">${projects.map(p => `<option value="${esc(p.id)}"${f.projects.includes(p.id) ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+          <div class="proj-pick-act">
+            <button class="btn btn-sm" id="st-proj-all" type="button">全选</button>
+            <button class="btn btn-sm" id="st-proj-clear" type="button">清空</button>
+            <span class="hint">未选择或全选时按全部可见项目汇总</span>
+          </div>
+        </div>
         <input type="month" id="st-month" value="${ym}">
         <select id="st-scope">
           ${opt('all', '统计口径：全部状态', f.scope)}
@@ -409,6 +427,7 @@ async function renderStats(main) {
       </table></div>
       <div class="legend">
         <span>行 = 项目成员（含负责人），列 = 该月每一天，末行为全员合计；浅灰表头为周末；蓝框为今天；统计列截止今天（今天之后的列不含数据）</span>
+        <span>多选项目时按所选项目汇总（未选择或全选 = 全部可见项目）；导出结果不区分具体项目</span>
       </div>
       ${sd.anomalies.length ? `
       <div class="anomaly-box">
@@ -417,7 +436,14 @@ async function renderStats(main) {
       </div>` : ''}
     </div>`;
 
-  bindFilter('st-proj', f, 'project');
+  /* 多选控件：bindFilter 只适用于单值控件，此处自行绑定 */
+  const projSel = $('#st-proj');
+  projSel.addEventListener('change', () => {
+    f.projects = Array.from(projSel.selectedOptions).map(o => Number(o.value));
+    renderView();
+  });
+  $('#st-proj-all').onclick = () => { f.projects = projects.map(p => p.id); renderView(); };
+  $('#st-proj-clear').onclick = () => { f.projects = []; renderView(); };
   bindFilter('st-scope', f, 'scope');
   const mi = $('#st-month');
   mi.addEventListener('change', () => { f.month = mi.value || curYM(); renderView(); });

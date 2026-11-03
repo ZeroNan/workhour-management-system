@@ -307,8 +307,21 @@ scrypt$<N>$<r>$<p>$<saltHex>$<hashHex>
 
 | # | 方法 | 路径 | 入参 | 出参(200) | 权限 | 错误码 |
 |---|---|---|---|---|---|---|
-| 30 | GET | /api/stats/project | `?projectId&month=YYYY-MM&scope=all\|approved` | `{month, today, memberRows:[{userId,name,dept,cells:[],sum}], totals:[], grand, anomalies:[未来日期脏记录]}`。**矩阵计算排除 date>today 的记录**（P0-4②：不参与合计/导出），anomalies 单列供置灰展示 | admin | 401/403；400 VALIDATION_ERROR |
+| 30 | GET | /api/stats/project | `?projectId&projectIds&month=YYYY-MM&scope=all\|approved` | `{projectId, projectName, month, today, scope, memberRows:[{userId,name,dept,cells:[],sum}], totals:[], grand, anomalies:[未来日期脏记录]}`。**矩阵计算排除 date>today 的记录**（P0-4②：不参与合计/导出），anomalies 单列供置灰展示 | admin / pm | 401/403（含 projectIds 越权）；400 VALIDATION_ERROR |
 | 31 | GET | /api/export/project.xlsx | 同 30 | xlsx 文件流（`Content-Disposition: attachment; filename*=UTF-8''工时统计_2026-09.xlsx`，同源 statsService，复用 30 的查询） | admin | 同 30（**P1-1，后置任务 T20**） |
+
+**30 号接口：项目多选（`projectIds`）**
+
+| 项 | 说明 |
+|---|---|
+| 入参 | `projectIds`：逗号分隔的项目 id 列表（如 `projectIds=1,2,3`），可选，与 `projectId` 共存 |
+| 优先级 | `projectIds` 提供（非空串）时**以它为准**，`projectId` 被忽略；未提供或为空串时完全走原有逻辑（`projectId` 单值 / 两者都空 = 聚合全部可见） |
+| 解析与校验 | 拆分 → 去空白 → 丢弃空项 → 转整数 → 去重；含非整数或解析后为空数组时返回 400 `VALIDATION_ERROR` |
+| 权限约束 | **每个 id 都必须在调用者可见范围内**（admin = 全部项目；pm = 仅自己负责的项目），否则 403 `FORBIDDEN`（路由层校验一次，`statsService` 内再纵深校验一次） |
+| 默认口径 | 空选（未选任何项目）与全选（选中数 = 可见项目数）**等价**，均为「聚合全部可见项目」；前端此时省略 `projectIds`，与多选前行为一致 |
+| 出参 | 结构不变；`projectIds` 生效时 `projectId=null`、`projectName='全部项目'`，不体现具体项目 |
+| 聚合口径 | 复用原有 `IN (...)` 聚合：成员 = 所选项目 `project_members` 并集 ∪ 记录中出现的人；同一成员同日跨项目工时**累加为一行**；`totals`/`grand` 同口径 |
+| 导出 | 仍为**一次请求 + 一个汇总文件**（表头、`全员合计` 末行、sheet 名 `项目统计`、文件名 `项目统计_{projectName}_{YYYY-MM}`、CSV 降级逻辑均不变），不逐项目分节、不新增项目列 |
 
 ### 3.2 工时记录导出实现（前端分批导出）
 

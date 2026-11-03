@@ -6,24 +6,34 @@ import { serverToday, isValidMonthStr } from '../utils/date.js';
 
 /**
  * 按项目统计矩阵
- * @param {number} projectId
+ * @param {number|null} projectId 单项目 id（null = 聚合）
  * @param {string} month 'YYYY-MM'
  * @param {'all'|'approved'} scope
+ * @param {number[]} [accessibleProjectIds] 当前用户可见的项目 id 列表
+ * @param {number[]} [selectedProjectIds] 多选项目 id（已由路由校验权限）；非空时以它为准
  */
-// projectId: number | null（null = 聚合 accessibleProjectIds 范围内的全部项目）
+// projectId: number | null（null = 聚合 accessibleProjectIds 范围内的全部项目，或 selectedProjectIds 指定的子集）
 // accessibleProjectIds: 当前用户可见的项目 id 列表（admin 全量 / pm 仅自己负责）
-export async function projectStats(projectId, month, scope, accessibleProjectIds) {
+export async function projectStats(projectId, month, scope, accessibleProjectIds, selectedProjectIds) {
   if (projectId != null) {
     if (!Number.isInteger(Number(projectId))) throw err('VALIDATION_ERROR', 'projectId 非法');
     if (accessibleProjectIds && !accessibleProjectIds.includes(Number(projectId))) {
       throw err('FORBIDDEN', '无权查看该项目统计');
     }
   }
+  // 多选子集：路由已鉴权，此处再做一次可见性校验（纵深防御）
+  const multi = Array.isArray(selectedProjectIds) && selectedProjectIds.length ? selectedProjectIds.map(Number) : null;
+  if (multi) {
+    if (multi.some(id => !Number.isInteger(id))) throw err('VALIDATION_ERROR', 'projectIds 非法');
+    if (accessibleProjectIds && multi.some(id => !accessibleProjectIds.map(Number).includes(id))) {
+      throw err('FORBIDDEN', '无权查看所选项目统计');
+    }
+  }
   if (!isValidMonthStr(month)) throw err('VALIDATION_ERROR', 'month 格式应为 YYYY-MM');
   if (scope !== 'all' && scope !== 'approved') scope = 'all';
 
   const today = serverToday();
-  const pids = projectId != null ? [Number(projectId)] : (accessibleProjectIds || []);
+  const pids = projectId != null ? [Number(projectId)] : (multi || accessibleProjectIds || []);
 
   // 当月天数
   const [y, m] = month.split('-').map(Number);
