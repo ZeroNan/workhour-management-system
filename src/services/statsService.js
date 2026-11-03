@@ -58,6 +58,14 @@ export async function projectStats(projectId, month, scope, accessibleProjectIds
 
   const placeholders = pids.map(() => '?').join(',');
 
+  // 所选项目的负责人并集：多选路径不查单项目 owner（projectId=null），需在此补齐，
+  // 保证「负责人无工时、又不在 project_members」时仍出现在成员行，与单项目口径一致
+  const ownerIds = multi
+    ? [...new Set((await db.prepare(
+      `SELECT DISTINCT owner_id FROM projects WHERE id IN (${placeholders}) AND owner_id IS NOT NULL`).all(...pids)
+    ).map(r => Number(r.owner_id)).filter(id => Number.isInteger(id)))]
+    : [];
+
   // 未来日期记录 → anomalies（不参与合计/导出）
   const anomalies = await db.prepare(`
     SELECT t.id, t.date, t.hours, t.status, u.name AS userName
@@ -72,11 +80,12 @@ export async function projectStats(projectId, month, scope, accessibleProjectIds
     WHERE t.project_id IN (${placeholders}) AND t.date LIKE ? AND t.date <= ? ${statusCond}
   `).all(...pids, `${month}-%`, today);
 
-  // 成员行 = 可见项目成员并集（单项目时确保 owner 在内）
+  // 成员行 = 所选项目成员并集 ∪ 所选项目负责人 ∪ 有工时记录的人
   const memberIds = [];
   (await db.prepare(`SELECT DISTINCT user_id FROM project_members WHERE project_id IN (${placeholders})`)
     .all(...pids)).forEach(r => { if (!memberIds.includes(r.user_id)) memberIds.push(r.user_id); });
   if (projectId != null && ownerId != null && !memberIds.includes(ownerId)) memberIds.push(ownerId);
+  ownerIds.forEach(id => { if (id != null && !memberIds.includes(id)) memberIds.push(id); });
 
   rows.forEach(r => { if (!memberIds.includes(r.user_id)) memberIds.push(r.user_id); });
 

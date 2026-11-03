@@ -365,8 +365,8 @@ async function renderStats(main) {
   const projects = me.role === 'admin' ? allProjects : allProjects.filter(p => p.ownerId === me.id);
   if (!projects.length) { main.innerHTML = empty(me.role === 'admin' ? '暂无项目数据，请先在「基础数据管理」中添加项目' : '您当前没有负责的项目'); return; }
   const f = statsState;
-  /* 兼容旧的单值 project：迁移进数组后删除 */
-  if (f.project != null && f.project !== '') {
+  /* 兼容旧的单值 project：迁移进数组后删除（空串等残留属性同样清理） */
+  if (f.project !== undefined) {
     const legacy = Number(f.project);
     if (Number.isInteger(legacy) && legacy > 0) f.projects = [legacy];
     delete f.project;
@@ -426,7 +426,7 @@ async function renderStats(main) {
         <tbody>${bodyRows}${totalRow}</tbody>
       </table></div>
       <div class="legend">
-        <span>行 = 项目成员（含负责人），列 = 该月每一天，末行为全员合计；浅灰表头为周末；蓝框为今天；统计列截止今天（今天之后的列不含数据）</span>
+        <span>行 = 所选项目成员与负责人并集（含有工时记录的人）；列 = 该月每一天，末行为全员合计；浅灰表头为周末；蓝框为今天；统计列截止今天（今天之后的列不含数据）</span>
         <span>多选项目时按所选项目汇总（未选择或全选 = 全部可见项目）；导出结果不区分具体项目</span>
       </div>
       ${sd.anomalies.length ? `
