@@ -223,6 +223,7 @@ td.warn{background:#fdeed6 !important;color:#b45309;font-weight:700}
   .main{padding:14px 12px 40px}
   .demo-grid{grid-template-columns:repeat(2,1fr)}
   .form-grid{grid-template-columns:1fr 1fr}
+}
 
 /* ---------- v2 新增：今天列高亮 / 异常记录 / 待代审标签 ---------- */
 .dth.today{background:#e8f0ff;outline:2px solid var(--primary);outline-offset:-2px}
