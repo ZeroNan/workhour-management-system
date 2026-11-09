@@ -20,14 +20,21 @@ const fmtH = h => String(Math.round(h * 100) / 100);
 const HOURS_PER_DAY = 7;
 const UNIT_KEY = 'wtms_unit';
 const UNIT_TEXT = { h: 'h', d: '人天' };
-/** 当前显示单位：'h' 小时（默认）| 'd' 人天；隐私模式读不到 localStorage 时回落小时 */
+/* 会话内兜底：隐私模式（Safari 无痕等）下 localStorage 读写抛异常，写不进去时靠它保证
+ * 「点了人天就生效」，否则 setUnit 之后紧跟的 getUnit 又会读回小时，按钮看起来没反应。 */
+let unitMemo = null;
+/** 当前显示单位：'h' 小时（默认）| 'd' 人天；localStorage 不可用/值非法时回落会话内兜底 */
 function getUnit() {
-  try { return localStorage.getItem(UNIT_KEY) === 'd' ? 'd' : 'h'; } catch (e) { return 'h'; }
+  let stored = null;
+  try { stored = localStorage.getItem(UNIT_KEY); } catch (e) { stored = null; }
+  const v = stored === 'd' || stored === 'h' ? stored : unitMemo;
+  return v === 'd' ? 'd' : 'h';
 }
 /** 写入显示单位，非法值一律落回 'h'；返回最终生效值 */
 function setUnit(u) {
   const v = u === 'd' ? 'd' : 'h';
-  try { localStorage.setItem(UNIT_KEY, v); } catch (e) { /* 隐私模式忽略，仅当次生效 */ }
+  unitMemo = v;   /* 先记内存，再尽量持久化：写失败也不影响本次会话生效 */
+  try { localStorage.setItem(UNIT_KEY, v); } catch (e) { /* 隐私模式：仅当次会话生效 */ }
   return v;
 }
 /** 原始小时 → 当前单位数值（人天保留 2 位小数；小时原值不四舍五入，交给 fmtH 控制显示） */

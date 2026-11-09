@@ -12,6 +12,9 @@ const astatsState = { from: '', to: '', scope: 'all' };
  * 否则用户填了日期没点「查询」就去切单位，输入会被静默丢弃。 */
 let astatsDraft = null;
 
+/* 渲染序号（并发渲染守卫）：连点单位按钮时只有最后一次的渲染结果可以落地 */
+let astatsRenderSeq = 0;
+
 /* 模块级图表实例与 resize 监听：renderAStats 开头逐个 dispose / 先移除旧监听再挂新，
  * 避免重复进入页面时出现重复 resize 监听与泄漏的旧实例 */
 let astatsCharts = [];
@@ -23,6 +26,10 @@ function astatsDefaults() {
 }
 
 async function renderAStats(main) {
+  /* 渲染序号：同一 tick 内连点单位按钮会并发进入本函数，过期的那次必须在 await 之后丢弃，
+   * 否则两次渲染各自 addEventListener('resize')，模块变量只记得后者，前一个监听永久泄漏。 */
+  const seq = ++astatsRenderSeq;
+
   /* 清理上一轮图表实例与 resize 监听 */
   astatsCharts.forEach(c => { try { c.dispose(); } catch (e) { /* 已销毁则忽略 */ } });
   astatsCharts = [];
@@ -39,13 +46,13 @@ async function renderAStats(main) {
   if (f.scope !== 'all' && f.scope !== 'approved') f.scope = 'all';
 
   const data = await api.get(`/api/stats/admin/overview?from=${f.from}&to=${f.to}&scope=${f.scope}`);
+  if (seq !== astatsRenderSeq) return;   /* 期间又发起了新渲染：本次结果与 DOM 一并作废 */
   const noData = data.recordCount === 0;
   const scopeLabel = f.scope === 'approved' ? '仅已通过' : '全部状态';
   const hasChart = typeof echarts !== 'undefined';
   /* 显示单位（小时 / 人天）：纯展示换算，接口始终返回小时 */
   const unit = getUnit();
   const uLabel = unitText(unit);          /* 'h' | '人天' */
-  const uPush = unit === 'd' ? ' 人天' : 'h';  /* 跟在数值后的紧凑后缀（图表/图例用，含前导空格） */
 
   /* ---------- KPI 指标卡 ---------- */
   const kpis = `
@@ -146,12 +153,13 @@ async function renderAStats(main) {
 
   const { markDirty } = bindAStatsFilters(f);
   bindUnitToggle();
-  /* 回填切换单位前未应用的筛选草稿，并恢复「有未应用的修改」提示 */
+  /* 回填切换单位前未应用的筛选草稿，并恢复「有未应用的修改」提示。
+   * 日期用无条件赋值：用户把日期清空（value=''）也是一种未应用修改，不能因为假值被跳过。 */
   if (astatsDraft) {
     const d = astatsDraft;
     astatsDraft = null;
-    if (d.from) $('#as-from').value = d.from;
-    if (d.to) $('#as-to').value = d.to;
+    $('#as-from').value = d.from;
+    $('#as-to').value = d.to;
     $('#as-scope').value = d.scope;
     markDirty();
   }
