@@ -210,12 +210,14 @@ function bindAStatsFilters(f) {
     if (!d.from || !d.to) { toast('请完整选择开始与结束日期', 'error'); return; }
     if (d.from > d.to) { toast('开始日期不能晚于结束日期', 'error'); return; }
     f.from = d.from; f.to = d.to; f.scope = d.scope;
+    astatsDraft = null;   /* 本次已显式应用，作废单位切换暂存的草稿，避免回填到新渲染 */
     renderView();
   };
   /* 重置：恢复默认（本年 1 月 1 日 ~ 今天 + 全部状态）并立即查询 */
   $('#as-reset').onclick = () => {
     const def = astatsDefaults();
     f.from = def.from; f.to = def.to; f.scope = def.scope;
+    astatsDraft = null;   /* 重置语义是丢弃一切未应用输入，包括单位切换前暂存的草稿 */
     renderView();
   };
 
