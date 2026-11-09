@@ -8,6 +8,10 @@
 /* 已应用筛选（仅存已应用值；草稿值留在控件里，点查询才写入） */
 const astatsState = { from: '', to: '', scope: 'all' };
 
+/* 单位切换前的筛选草稿：切换单位会整页重渲染，先把未应用的输入暂存，渲染后回填，
+ * 否则用户填了日期没点「查询」就去切单位，输入会被静默丢弃。 */
+let astatsDraft = null;
+
 /* 模块级图表实例与 resize 监听：renderAStats 开头逐个 dispose / 先移除旧监听再挂新，
  * 避免重复进入页面时出现重复 resize 监听与泄漏的旧实例 */
 let astatsCharts = [];
@@ -38,12 +42,16 @@ async function renderAStats(main) {
   const noData = data.recordCount === 0;
   const scopeLabel = f.scope === 'approved' ? '仅已通过' : '全部状态';
   const hasChart = typeof echarts !== 'undefined';
+  /* 显示单位（小时 / 人天）：纯展示换算，接口始终返回小时 */
+  const unit = getUnit();
+  const uLabel = unitText(unit);          /* 'h' | '人天' */
+  const uPush = unit === 'd' ? ' 人天' : 'h';  /* 跟在数值后的紧凑后缀（图表/图例用，含前导空格） */
 
   /* ---------- KPI 指标卡 ---------- */
   const kpis = `
     <div class="kpi">
       <div class="k-label">总工时（所有项目 / 所有部门）</div>
-      <div class="k-value">${fmtH(data.total)}<small>h</small></div>
+      <div class="k-value">${fmtUnit(data.total, unit)}<small>${uLabel}</small></div>
       <div class="k-sub">共 ${data.recordCount} 条工时记录</div>
     </div>
     <div class="kpi">
@@ -79,27 +87,33 @@ async function renderAStats(main) {
     const body = m.projects.map((p, i) => `
       <tr>
         <td class="left">${esc(p)}</td>
-        ${m.cells[i].map(h => h ? `<td>${fmtH(h)}</td>` : '<td class="muted">—</td>').join('')}
-        <td class="c-sum">${fmtH(m.cells[i].reduce((s, x) => s + x, 0))}</td>
+        ${m.cells[i].map(h => h ? `<td>${fmtUnit(h, unit)}</td>` : '<td class="muted">—</td>').join('')}
+        <td class="c-sum">${fmtUnit(m.cells[i].reduce((s, x) => s + x, 0), unit)}</td>
       </tr>`).join('');
     const sumRow = `
       <tr class="sumrow">
         <td class="left">合计</td>
-        ${colSums.map(h => `<td>${fmtH(h)}</td>`).join('')}
-        <td class="c-sum">${fmtH(data.total)}</td>
+        ${colSums.map(h => `<td>${fmtUnit(h, unit)}</td>`).join('')}
+        <td class="c-sum">${fmtUnit(data.total, unit)}</td>
       </tr>`;
     matrixHTML = `
       <div class="tbl-wrap"><table class="tbl">
         <thead>${head}</thead>
         <tbody>${body}${sumRow}</tbody>
       </table></div>
-      <div class="legend"><span>行 = 项目，列 = 部门，交叉值 = 该时间范围内该项目·该部门的工时合计（h）；末行末列为合计；与上方两图同源数据</span></div>`;
+      <div class="legend"><span>行 = 项目，列 = 部门，交叉值 = 该时间范围内该项目·该部门的工时合计（${uLabel}）；末行末列为合计；与上方两图同源数据</span></div>`;
   }
 
   main.innerHTML = `
     <div class="page-head">
       <h2>工时统计</h2>
-      <span class="muted">仅管理员可见 · ${f.from} ~ ${f.to} · ${scopeLabel}</span>
+      <div class="page-tools">
+        <span class="muted">仅管理员可见 · ${f.from} ~ ${f.to} · ${scopeLabel}</span>
+        <div class="unit-toggle" id="as-unit" role="group" aria-label="工时显示单位切换" title="1 人天 = ${HOURS_PER_DAY} 小时（仅切换显示，不改变数据口径）">
+          <button type="button" data-unit="h" class="${unit === 'h' ? 'active' : ''}" aria-pressed="${unit === 'h'}">小时</button>
+          <button type="button" data-unit="d" class="${unit === 'd' ? 'active' : ''}" aria-pressed="${unit === 'd'}">人天</button>
+        </div>
+      </div>
     </div>
     <div class="card">
       <div class="filters">
@@ -120,7 +134,7 @@ async function renderAStats(main) {
     <div class="kpi-grid">${kpis}</div>
     <div class="chart-grid">
       <div class="chart-card">
-        <h3>各部门总工时（h）</h3>
+        <h3>各部门总工时（${uLabel}）</h3>
         ${deptChartBody}
       </div>
       <div class="chart-card">
@@ -130,14 +144,39 @@ async function renderAStats(main) {
     </div>
     <div class="card">${matrixHTML}</div>`;
 
-  bindAStatsFilters(f);
+  const { markDirty } = bindAStatsFilters(f);
+  bindUnitToggle();
+  /* 回填切换单位前未应用的筛选草稿，并恢复「有未应用的修改」提示 */
+  if (astatsDraft) {
+    const d = astatsDraft;
+    astatsDraft = null;
+    if (d.from) $('#as-from').value = d.from;
+    if (d.to) $('#as-to').value = d.to;
+    $('#as-scope').value = d.scope;
+    markDirty();
+  }
   if (hasChart && !noData) {
-    renderDeptChart($('#as-chart-dept'), data);
-    renderProjChart($('#as-chart-proj'), data);
+    renderDeptChart($('#as-chart-dept'), data, unit);
+    renderProjChart($('#as-chart-proj'), data, unit);
     /* 统一 resize：模块级 handler，先移除旧再挂新，避免重复监听 */
     astatsResizeHandler = () => astatsCharts.forEach(c => c.resize());
     window.addEventListener('resize', astatsResizeHandler);
   }
+}
+
+/* 单位切换：分段按钮，纯显示偏好（写 localStorage + 同参数重渲染），不影响筛选与接口入参 */
+function bindUnitToggle() {
+  const box = $('#as-unit');
+  if (!box) return;
+  box.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-unit]');
+    if (!btn) return;
+    const next = btn.dataset.unit === 'd' ? 'd' : 'h';
+    if (next === getUnit()) return;   /* 点当前单位：无动作，不重渲染 */
+    setUnit(next);
+    astatsDraft = { from: $('#as-from').value, to: $('#as-to').value, scope: $('#as-scope').value };
+    renderView();
+  });
 }
 
 /* 筛选草稿模式：改控件只标脏，点「查询」才应用（与 renderStats 交互一致） */
@@ -171,23 +210,29 @@ function bindAStatsFilters(f) {
     f.from = def.from; f.to = def.to; f.scope = def.scope;
     renderView();
   };
+
+  return { markDirty };   /* 供外部（如切换单位后回填草稿）刷新脏提示 */
 }
 
 /* ---------- 各部门总工时：横向条形图，按工时降序（最大在顶部） ---------- */
-function renderDeptChart(el, data) {
+function renderDeptChart(el, data, unit) {
   if (!el) return;
-  const total = data.total;
+  const u = unit || getUnit();
+  /* 柱子数值随单位换算：占比是比值，分子分母同单位，切换单位不变 */
+  const total = toUnit(data.total, u);
+  const fmtCv = v => (u === 'd' ? Number(v).toFixed(2) : fmtH(v));   /* 已换算值 → 文本 */
   const pct = h => (total > 0 ? (h / total * 100).toFixed(1) : '0.0');
   const chart = echarts.init(el);
   chart.setOption({
     grid: { left: 8, right: 48, top: 10, bottom: 6, containLabel: true },
     tooltip: {
       trigger: 'item',
-      formatter: p => `${esc(p.name)} · 工时(h)：${fmtH(p.value)} · 占比：${pct(p.value)}%`,
+      formatter: p => `${esc(p.name)} · 工时(${unitText(u)})：${fmtCv(p.value)} · 占比：${pct(p.value)}%`,
     },
     xAxis: {
       type: 'value',
-      axisLabel: { fontSize: 11, color: '#8a94a6' },
+      /* 轴刻度人天取 1 位小数，避免 142.86 / 285.71 这类长刻度挤在轴上 */
+      axisLabel: { fontSize: 11, color: '#8a94a6', formatter: v => (u === 'd' ? String(Math.round(v * 10) / 10) : String(v)) },
       splitLine: { lineStyle: { color: '#e5e8ef' } },
     },
     yAxis: {
@@ -200,13 +245,13 @@ function renderDeptChart(el, data) {
     },
     series: [{
       type: 'bar',
-      data: data.byDept.map(d => d.hours),
+      data: data.byDept.map(d => toUnit(d.hours, u)),
       itemStyle: { color: '#2f6fed', borderRadius: [0, 4, 4, 0] },
       barMaxWidth: 22,
       label: {
         show: true, position: 'right',
         fontSize: 12, fontWeight: 600, color: '#1f2937',
-        formatter: p => fmtH(p.value),
+        formatter: p => fmtCv(p.value),
       },
     }],
   });
@@ -217,9 +262,11 @@ function renderDeptChart(el, data) {
 /* 色序（超出循环取色） */
 const ASTATS_PIE_COLORS = ['#2f6fed', '#16a34a', '#ea8a00', '#8b5cf6', '#94a3b8', '#0ea5e9', '#d946ef', '#f43f5e', '#14b8a6', '#f59e0b'];
 
-function renderProjChart(el, data) {
+function renderProjChart(el, data, unit) {
   if (!el) return;
-  const total = data.total;
+  const u = unit || getUnit();
+  const uPush = u === 'd' ? ' 人天' : 'h';   /* 紧跟数值的后缀，小时与改造前一致（如 4844.5h） */
+  const total = data.total;                 /* 原始小时：环形图只比占比，无需换算 */
   const valueMap = new Map(data.byProject.map(p => [p.name, p.hours]));  /* 图例 formatter 闭包查值 */
   const pct = h => (total > 0 ? (h / total * 100).toFixed(1) : '0.0');
   const chart = echarts.init(el);
@@ -227,7 +274,7 @@ function renderProjChart(el, data) {
     color: ASTATS_PIE_COLORS,
     tooltip: {
       trigger: 'item',
-      formatter: p => `${esc(p.name)} · 工时(h)：${fmtH(p.value)} · 占比：${p.percent}%`,
+      formatter: p => `${esc(p.name)} · 工时(${unitText(u)})：${fmtUnit(p.value, u)} · 占比：${p.percent}%`,
     },
     legend: {
       orient: 'vertical',
@@ -238,13 +285,13 @@ function renderProjChart(el, data) {
       textStyle: { fontSize: 12, color: '#4b5563' },
       formatter: name => {
         const h = valueMap.get(name) || 0;
-        return `${name}  ${fmtH(h)}h  ${pct(h)}%`;
+        return `${name}  ${fmtUnit(h, u)}${uPush}  ${pct(h)}%`;
       },
     },
-    /* 环形中心显示「总工时 / Nh」 */
+    /* 环形中心显示「总工时 / 数值 + 单位」 */
     title: {
       text: '总工时',
-      subtext: `${fmtH(total)}h`,
+      subtext: `${fmtUnit(total, u)}${uPush}`,
       left: '36%',
       top: '38%',
       textAlign: 'center',

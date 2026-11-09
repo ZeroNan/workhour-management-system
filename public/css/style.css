@@ -128,6 +128,14 @@ td.warn{background:#fdeed6 !important;color:#b45309;font-weight:700}
 .filter .member-checks{max-height:104px;overflow:auto}
 /* 导出控件组：与筛选条底部对齐，按钮与状态文案同一行 */
 .filter-export{flex-direction:row;align-items:center;gap:8px;min-width:0;margin-left:auto}
+/* 工时显示单位切换（小时 / 人天，1 人天 = 7 小时）：分段按钮，纯显示偏好，不参与筛选草稿 */
+.unit-toggle{display:inline-flex;background:#fff;border:1px solid #d3d9e3;border-radius:8px;overflow:hidden}
+.unit-toggle button{border:0;background:transparent;padding:5px 12px;font-size:12px;font-family:inherit;color:#5b6472;cursor:pointer;transition:background .15s,color .15s}
+.unit-toggle button + button{border-left:1px solid #d3d9e3}
+.unit-toggle button:hover{background:#f6f8fc}
+.unit-toggle button.active{background:var(--primary);color:#fff}
+.unit-toggle button.active:hover{background:var(--primary-dark)}
+.unit-toggle button:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}
 .batch-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 12px;margin-bottom:12px;
   background:#f6f8fc;border:1px solid var(--border);border-radius:8px}
 .batch-bar .cnt{color:var(--muted);font-size:13px}

@@ -12,6 +12,37 @@ const weekdayOf = ds => WEEK[new Date(ds + 'T00:00:00').getDay()];
 const isWeekend = ds => { const w = new Date(ds + 'T00:00:00').getDay(); return w === 0 || w === 6; };
 const daysInMonth = ym => { const a = ym.split('-'); return new Date(+a[0], +a[1], 0).getDate(); };
 const fmtH = h => String(Math.round(h * 100) / 100);
+
+/* ---------- 工时显示单位（小时 / 人天） ----------
+ * 1 人天 = 7 小时。HOURS_PER_DAY 是唯一换算来源，页面里禁止再出现字面量 7。
+ * 单位是纯显示偏好：只存 localStorage，不进接口入参——后端始终以「小时」存储与聚合。
+ * 换算只做展示，接口返回的数值永远是小时；写库、校验、导出仍按小时口径。 */
+const HOURS_PER_DAY = 7;
+const UNIT_KEY = 'wtms_unit';
+const UNIT_TEXT = { h: 'h', d: '人天' };
+/** 当前显示单位：'h' 小时（默认）| 'd' 人天；隐私模式读不到 localStorage 时回落小时 */
+function getUnit() {
+  try { return localStorage.getItem(UNIT_KEY) === 'd' ? 'd' : 'h'; } catch (e) { return 'h'; }
+}
+/** 写入显示单位，非法值一律落回 'h'；返回最终生效值 */
+function setUnit(u) {
+  const v = u === 'd' ? 'd' : 'h';
+  try { localStorage.setItem(UNIT_KEY, v); } catch (e) { /* 隐私模式忽略，仅当次生效 */ }
+  return v;
+}
+/** 原始小时 → 当前单位数值（人天保留 2 位小数；小时原值不四舍五入，交给 fmtH 控制显示） */
+function toUnit(hours, unit) {
+  const n = Number(hours) || 0;
+  return (unit || getUnit()) === 'd' ? Number((n / HOURS_PER_DAY).toFixed(2)) : n;
+}
+/** 原始小时 → 当前单位的显示文本（人天固定 2 位小数；小时 ≤2 位且去尾零，与既有 fmtH 一致） */
+function fmtUnit(hours, unit) {
+  const u = unit || getUnit();
+  const n = Number(hours) || 0;
+  return u === 'd' ? (n / HOURS_PER_DAY).toFixed(2) : fmtH(n);
+}
+/** 单位后缀：'h' | '人天'（用于 KPI 小字、图表标题、表头） */
+const unitText = unit => UNIT_TEXT[unit || getUnit()] || 'h';
 const empty = msg => `<div class="card"><div class="empty">${esc(msg)}</div></div>`;
 const opt = (v, l, sel) => `<option value="${esc(v)}" ${String(sel) === String(v) ? 'selected' : ''}>${esc(l)}</option>`;
 
