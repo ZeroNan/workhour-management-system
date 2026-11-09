@@ -18,6 +18,7 @@ const NAV = [
   { view:'kanban',  label:'日报看板',     roles:['dev', 'pm', 'admin'] },
   { view:'allts',   label:'全部工时信息', roles:['admin'] },
   { view:'stats',   label:'项目统计',     roles:['admin', 'pm'] },
+  { view:'astats',  label:'工时统计',     roles:['admin'] },
   { view:'base',    label:'基础数据管理', roles:['admin'] },
   { view:'integration', label:'集成管理', roles:['admin'] },
 ];
@@ -63,6 +64,7 @@ async function renderView() {
       case 'kanban':  await renderKanban(main);        break;
       case 'allts':   await renderAllTS(main);   break;
       case 'stats':   await renderStats(main);   break;
+      case 'astats':  await renderAStats(main);  break;
       case 'base':    await renderBase(main);    break;
       case 'integration': await renderIntegration(main); break;
       default:        main.innerHTML = empty('未知页面');

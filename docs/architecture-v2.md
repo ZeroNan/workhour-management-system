@@ -309,6 +309,7 @@ scrypt$<N>$<r>$<p>$<saltHex>$<hashHex>
 |---|---|---|---|---|---|---|
 | 30 | GET | /api/stats/project | `?projectId&projectIds&month=YYYY-MM&scope=all\|approved` | `{projectId, projectName, month, today, scope, memberRows:[{userId,name,dept,cells:[],sum}], totals:[], grand, anomalies:[未来日期脏记录]}`。**矩阵计算排除 date>today 的记录**（P0-4②：不参与合计/导出），anomalies 单列供置灰展示 | admin / pm | 401/403（含 projectIds 越权）；400 VALIDATION_ERROR |
 | 31 | GET | /api/export/project.xlsx | 同 30 | xlsx 文件流（`Content-Disposition: attachment; filename*=UTF-8''工时统计_2026-09.xlsx`，同源 statsService，复用 30 的查询） | admin | 同 30（**P1-1，后置任务 T20**） |
+| 32 | GET | /api/stats/admin/overview | `?from=YYYY-MM-DD&to=YYYY-MM-DD&scope=all\|approved` | `{from, to, scope, total, recordCount, projectCount, deptCount, userCount, byDept:[{name,hours}], byProject:[{name,hours}], matrix:{projects:[], depts:[], cells:[[]]}}`。byDept/byProject 与 matrix 行列均按工时降序；项目按 id 分组（同名不合并）、部门按 id 分组（无部门显示「未分组」）；scope=approved 仅统计已通过；date>today 异常记录不参与（与 30 同口径）；部门取工时记录部门快照（与 19 号「全部工时」列表同源） | admin | 401；403 FORBIDDEN（pm/dev）；400 VALIDATION_ERROR（from/to 缺失或格式非法、from>to、scope 非法） |
 
 **30 号接口：项目多选（`projectIds`）**
 

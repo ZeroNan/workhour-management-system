@@ -202,6 +202,19 @@ td.warn{background:#fdeed6 !important;color:#b45309;font-weight:700}
 .demo-btn b{font-size:12px;color:var(--text)}
 .demo-btn span{color:var(--muted);font-size:11px}
 
+/* ---------- 工时统计页（admin）：KPI 指标卡 + 双图表 ---------- */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:14px}
+.kpi{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px}
+.kpi .k-label{font-size:12px;color:var(--muted);font-weight:600}
+.kpi .k-value{font-size:24px;font-weight:700;color:var(--text);margin-top:4px;font-variant-numeric:tabular-nums}
+.kpi .k-value small{font-size:13px;font-weight:600;color:var(--muted);margin-left:2px}
+.kpi .k-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.chart-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px}
+.chart-card h3{font-size:13px;color:#374151;font-weight:600;margin-bottom:10px}
+.chart-box{height:300px}
+@media (max-width:1100px){.chart-grid{grid-template-columns:1fr}}
+
 /* ---------- 响应式 ---------- */
 @media (max-width:860px){
   .layout{flex-direction:column}

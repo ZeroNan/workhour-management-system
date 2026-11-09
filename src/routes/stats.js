@@ -1,11 +1,11 @@
-// 统计路由：按项目统计矩阵（渲染与导出共用）
-// admin 全量；pm 仅自己负责的项目
+// 统计路由：按项目统计矩阵（渲染与导出共用）+ 管理员工时统计总览
+// admin 全量；pm 仅自己负责的项目（/admin/overview 仅 admin）
 // projectId 为空且未提供 projectIds = 聚合可见范围内的全部项目；projectIds（多选）优先于 projectId
 import { Router } from 'express';
 import db from '../db.js';
 import { err, wrap } from '../utils/http.js';
 import { requireRole } from '../middleware/auth.js';
-import { projectStats } from '../services/statsService.js';
+import { projectStats, adminOverview } from '../services/statsService.js';
 
 const router = Router();
 
@@ -42,6 +42,16 @@ router.get('/project', requireRole('admin', 'pm'), wrap(async (req, res) => {
   }
   const pid = selected ? null : (projectId ? Number(projectId) : null);
   res.json(await projectStats(pid, String(month || ''), String(scope || 'all'), accessible, selected));
+}));
+
+// 32. 管理员工时统计总览（工时统计页，仅 admin，只读聚合）
+router.get('/admin/overview', requireRole('admin'), wrap(async (req, res) => {
+  const { from, to, scope } = req.query;
+  res.json(await adminOverview({
+    from: String(from || ''),
+    to: String(to || ''),
+    scope: scope === undefined || scope === null ? 'all' : String(scope),
+  }));
 }));
 
 export default router;
